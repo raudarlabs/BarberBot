@@ -1,8 +1,8 @@
 """
 Visits nobody marked in Altegio (neither "client arrived" nor "no-show") — they drop out of the
-statistics, the dashboard and the payroll. At 21:00 (api/cron_evening.py) the admins get today's
-list grouped by barber plus how many are still open from the last 7 days, and each linked barber
-gets his own list. Nothing is sent when everything is marked.
+statistics, the dashboard and the payroll. At 21:00 (api/cron_evening.py) each linked barber gets
+his own list, and the shop's admin account (admin_notify.notify_chat_ids) gets everyone's, grouped
+by barber, plus how many are still open from the last 7 days. Nothing is sent when all is marked.
 """
 from __future__ import annotations
 

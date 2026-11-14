@@ -11,6 +11,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "api"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+os.environ["NOTIFY_CHAT_IDS"] = "admins"  # notifications follow ADMIN_CHAT_IDS in these tests
 os.environ["ARCADE_DEV"] = "1"
 for k in ("DATABASE_URL", "POSTGRES_URL", "ARCADE_DATABASE_URL", "UPSTASH_REDIS_REST_URL", "KV_REST_API_URL"):
     os.environ.pop(k, None)
@@ -206,6 +207,15 @@ class WaitlistTests(unittest.IsolatedAsyncioTestCase):
         await waitlist.add(self.links, CLIENT, bk, [], datetime.now(TZ))
         await waitlist.run(self.client, self.links, self.bot)
         self.assertEqual(await waitlist._all(self.links), {})
+
+
+class NotifyChatsTests(unittest.TestCase):
+    def test_notifications_go_to_the_shop_admin_account(self):
+        import admin_notify
+        self.assertEqual(admin_notify.notify_chat_ids({}), [1051263236])
+        self.assertEqual(admin_notify.notify_chat_ids({"NOTIFY_CHAT_IDS": "5;6"}), [5, 6])
+        self.assertEqual(admin_notify.notify_chat_ids({"NOTIFY_CHAT_IDS": "admins", "ADMIN_CHAT_IDS": "7"}), [7])
+        self.assertEqual(admin_notify.admin_chat_ids({"ADMIN_CHAT_IDS": "1051263236,169742339"}), [1051263236, 169742339])
 
 
 class UnmarkedTests(unittest.IsolatedAsyncioTestCase):

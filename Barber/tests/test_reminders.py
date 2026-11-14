@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+os.environ["NOTIFY_CHAT_IDS"] = "admins"  # notifications follow ADMIN_CHAT_IDS in these tests
 
 import reminders  # noqa: E402
 import texts as T  # noqa: E402

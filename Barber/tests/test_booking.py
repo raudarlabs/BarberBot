@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from telegram import Contact  # noqa: E402
 from telegram.ext import ConversationHandler  # noqa: E402
+os.environ["NOTIFY_CHAT_IDS"] = "admins"  # notifications follow ADMIN_CHAT_IDS in these tests
 
 import booking  # noqa: E402
 import texts as T  # noqa: E402

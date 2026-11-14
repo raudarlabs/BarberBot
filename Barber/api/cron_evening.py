@@ -38,10 +38,10 @@ EVENING_HOUR = 21
 async def run_once(force=False) -> dict:
     if not force and _games.kyiv_now().hour != EVENING_HOUR:
         return {"ok": True, "skipped": "not %d:00 in Kyiv" % EVENING_HOUR}
-    ids = admin_notify.admin_chat_ids()
+    ids = admin_notify.notify_chat_ids()
     staff = await team.members()
     if not ids and not staff:
-        return {"ok": True, "skipped": "no ADMIN_CHAT_IDS and no team"}
+        return {"ok": True, "skipped": "no notification chats and no team"}
     mark = "bb:evening:%s" % _games.day_id()
     if not force and _kv.cmd("SET", mark, "1", "EX", 2 * 86400, "NX") is None:
         return {"ok": True, "skipped": "already sent today"}

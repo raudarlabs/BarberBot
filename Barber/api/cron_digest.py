@@ -1,6 +1,6 @@
 """
 GET /api/cron_digest — the morning digest at 9:00 Kyiv time (Vercel Cron, see vercel.json):
-the shop's day to the admins, and each linked barber his own day (none on his day off).
+the shop's day to the notification chat (@Custom_true_barbershop), and each linked barber his own day (none on his day off).
 
 Vercel Cron runs in UTC, so it calls at 06:00 and 07:00 UTC and only the run that falls on
 09:xx in Kyiv sends (UTC+3 in summer, UTC+2 in winter). A per-day mark in the store makes
@@ -42,10 +42,10 @@ async def run_once(force=False) -> dict:
     now_kyiv = _games.kyiv_now()
     if not force and now_kyiv.hour != DIGEST_HOUR:
         return {"ok": True, "skipped": "not %d:00 in Kyiv" % DIGEST_HOUR}
-    ids = admin_notify.admin_chat_ids()
+    ids = admin_notify.notify_chat_ids()
     staff = await team.members()
     if not ids and not staff:
-        return {"ok": True, "skipped": "no ADMIN_CHAT_IDS and no team"}
+        return {"ok": True, "skipped": "no notification chats and no team"}
     mark = "bb:digest:%s" % _games.day_id()
     if not force and _kv.cmd("SET", mark, "1", "EX", 2 * 86400, "NX") is None:
         return {"ok": True, "skipped": "already sent today"}

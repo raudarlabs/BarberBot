@@ -38,14 +38,32 @@ async def count_event(name: str, n: int = 1) -> None:
         logger.warning("count_event %s failed: %s", name, e)
 
 
-def admin_chat_ids(env=None) -> List[int]:
-    env = os.environ if env is None else env
+def _ids(raw: str) -> List[int]:
     out = []
-    for part in (env.get("ADMIN_CHAT_IDS") or "").replace(";", ",").split(","):
+    for part in (raw or "").replace(";", ",").split(","):
         part = part.strip()
         if part.lstrip("-").isdigit():
             out.append(int(part))
     return out
+
+
+def admin_chat_ids(env=None) -> List[int]:
+    """Who may open /admin and the dashboard."""
+    env = os.environ if env is None else env
+    return _ids(env.get("ADMIN_CHAT_IDS"))
+
+
+# The shop's admin account @Custom_true_barbershop: every notification goes there (owner's choice,
+# Nov 2026) — new / moved / cancelled bookings, low ratings and comments, the 9:00 digest and the
+# 21:00 unmarked visits. NOTIFY_CHAT_IDS overrides; "admins" sends to ADMIN_CHAT_IDS instead.
+DEFAULT_NOTIFY = "1051263236"
+
+
+def notify_chat_ids(env=None) -> List[int]:
+    """Who receives the bot's notifications (not the same as who may open /admin)."""
+    env = os.environ if env is None else env
+    raw = env.get("NOTIFY_CHAT_IDS", DEFAULT_NOTIFY)
+    return admin_chat_ids(env) if raw.strip().lower() == "admins" else _ids(raw)
 
 
 def user_name(user) -> str:
@@ -82,9 +100,9 @@ def cancelled_text(name, phone, username, staff, service, when) -> str:
 
 
 async def notify_admins(context, text: str) -> int:
-    """Send `text` to every admin chat. Returns how many got it."""
+    """Send `text` to the notification chats (notify_chat_ids). Returns how many got it."""
     bot = getattr(context, "bot", None)
-    ids = admin_chat_ids()
+    ids = notify_chat_ids()
     if bot is None or not ids:
         return 0
     sent = 0

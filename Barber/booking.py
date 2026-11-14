@@ -669,7 +669,7 @@ async def on_confirm(update, context):
         else:
             note = admin_notify.booked_text(*who, bk.get("staff_name", ""), svc.title, T.when(start),
                                             locations.get(bk["loc"], ""))
-        if admin_notify.admin_chat_ids():
+        if admin_notify.notify_chat_ids():
             await admin_notify.notify_admins(context, note + (T.MOCK_NOTE if client.is_mock else ""))
     except Exception:
         logger.exception("booking %s: admin notification failed", appt.id)

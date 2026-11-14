@@ -291,7 +291,7 @@ async def on_cancel_visit(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         logger.exception("cancel %s/%s: barber notification failed", loc, appt_id)
     try:
         user = update.effective_user
-        if not admin_notify.admin_chat_ids():
+        if not admin_notify.notify_chat_ids():
             raise StopIteration  # no admins configured: skip the extra Altegio lookup
         staff = appt.staff_name
         if not staff:
