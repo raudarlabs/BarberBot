@@ -45,6 +45,7 @@ import admin_notify
 import team
 import texts as T
 import voice as V
+import waitlist
 from altegio import AltegioError, normalize_phone
 
 logger = logging.getLogger(__name__)
@@ -297,9 +298,11 @@ async def show_times(update, context, prefix=None, window=None, starts=None):
             starts = await _free_starts(client, bk, day)
         except AltegioError as e:
             return await _api_failed(update, context, e)
+    bk["free_seen"] = [s.strftime("%H:%M") for s in starts]
+    wait = [] if bk.get("reschedule") else [[InlineKeyboardButton(T.WAITLIST_BUTTON, callback_data="bk:wl")]]
     if not starts:
-        text = (prefix + "\n\n" if prefix else "") + T.NO_TIME
-        await _show(update, text, InlineKeyboardMarkup([_nav("day")]))
+        text = (prefix + "\n\n" if prefix else "") + T.NO_TIME + ("\n" + T.WAITLIST_HINT if wait else "")
+        await _show(update, text, InlineKeyboardMarkup(wait + [_nav("day")]))
         return TIME
     if window and any(window):
         lo, hi = window[0] or "00:00", window[1] or "23:59"
@@ -311,7 +314,7 @@ async def show_times(update, context, prefix=None, window=None, starts=None):
     buttons = [InlineKeyboardButton(s.strftime("%H:%M"), callback_data="bk:t:" + s.strftime("%H%M"))
                for s in starts[:MAX_TIMES]]
     text = (prefix + "\n\n" if prefix else "") + T.PICK_TIME.format(day=T.day_button(day))
-    await _show(update, text, InlineKeyboardMarkup(_rows(buttons, 4) + [_nav("day")]))
+    await _show(update, text, InlineKeyboardMarkup(_rows(buttons, 4) + wait + [_nav("day")]))
     return TIME
 
 
@@ -495,6 +498,56 @@ async def on_day(update, context):
     if "staff_id" not in bk:
         return await _expired(update, context)
     bk["day"] = update.callback_query.data.split(":")[2]
+    return await show_times(update, context)
+
+
+async def on_waitlist(update, context):
+    """bk:wl — no time suits: remember the wish and end the flow."""
+    client, links, _ = _deps(context)
+    bk = _bk(context)
+    if "day" not in bk or "staff_id" not in bk or bk.get("reschedule"):
+        return await _expired(update, context)
+    await update.callback_query.answer()
+    res = await waitlist.add(links, update.effective_chat.id, bk, bk.get("free_seen") or [], datetime.now(client.tz))
+    day = T.day_button(date.fromisoformat(bk["day"]))
+    if res == "full":
+        text = T.WAITLIST_FULL
+    else:
+        text = T.WAITLIST_ADDED.format(staff=bk.get("staff_name", ""), day=day)
+    await _show(update, text)
+    return await _finish(update, context, None)
+
+
+async def start_on_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """bk:wd:{loc}:{staff}:{service}:{YYYYMMDD} from a waitlist message: straight to that day's times."""
+    client, _, locations = _deps(context)
+    q = update.callback_query
+    try:
+        _, _, loc, staff_id, svc_id, ymd = q.data.split(":")
+        loc, staff_id, svc_id = int(loc), int(staff_id), int(svc_id)
+        day = date(int(ymd[:4]), int(ymd[4:6]), int(ymd[6:]))
+    except ValueError:
+        await q.answer()
+        return None
+    if client is None or loc not in locations:
+        await q.answer(T.UNAVAILABLE, show_alert=True)
+        return None
+    if day < datetime.now(client.tz).date():
+        await q.answer(T.SESSION_EXPIRED, show_alert=True)
+        return None
+    try:
+        names = {s.id: s.name for s in await client.list_staff(loc)}
+        services = await client.list_services(loc, staff_id) if staff_id in names else []
+    except AltegioError as e:
+        return await _api_failed(update, context, e)
+    svc = next((s for s in services if s.id == svc_id), None)
+    if svc is None:
+        await q.answer(T.SESSION_EXPIRED, show_alert=True)
+        return None
+    await q.answer()
+    context.user_data["bk"] = {"loc": loc, "staff_id": staff_id, "staff_name": names[staff_id], "staff_names": names,
+                               "services": {s.id: s for s in services}, "service_id": svc.id,
+                               "duration": svc.duration, "day": day.isoformat()}
     return await show_times(update, context)
 
 
@@ -844,6 +897,7 @@ def build_handler(persistent: bool = False) -> ConversationHandler:
             CallbackQueryHandler(start_reschedule, pattern=r"^rm:mv:"),
             CallbackQueryHandler(start_booking, pattern=r"^bk:new$"),
             CallbackQueryHandler(start_with_staff, pattern=r"^bk:go:\d+:\d+$"),
+            CallbackQueryHandler(start_on_day, pattern=r"^bk:wd:\d+:\d+:\d+:\d{8}$"),
             voice,
         ],
         states={
@@ -854,7 +908,8 @@ def build_handler(persistent: bool = False) -> ConversationHandler:
                   CallbackQueryHandler(on_any_go, pattern=r"^bk:ago:\d+:\d+:\d{12}$")] + nav,
             SERVICE: [CallbackQueryHandler(on_service, pattern=r"^bk:svc:\d+$")] + nav,
             DAY: [CallbackQueryHandler(on_day, pattern=r"^bk:day:[\d-]+$")] + nav,
-            TIME: [CallbackQueryHandler(on_time, pattern=r"^bk:t:\d{4}$")] + nav,
+            TIME: [CallbackQueryHandler(on_time, pattern=r"^bk:t:\d{4}$"),
+                   CallbackQueryHandler(on_waitlist, pattern=r"^bk:wl$")] + nav,
             PHONE: [
                 MessageHandler(filters.CONTACT, on_contact),
                 MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.Regex(T.MENU_REGEX), on_phone_text),

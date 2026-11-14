@@ -317,6 +317,11 @@ async def on_cancel_visit(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await q.edit_message_text(text + "\n\n" + T.VISIT_CANCELLED, reply_markup=None)
     except BadRequest:
         pass
+    try:  # the freed slot: tell whoever waits for this barber on this day
+        import waitlist
+        await waitlist.run(client, links, getattr(context, "bot", None), only=(appt.staff_id, appt.start.date().isoformat()))
+    except Exception:
+        logger.exception("cancel %s/%s: waitlist check failed", loc, appt_id)
 
 
 def handlers():

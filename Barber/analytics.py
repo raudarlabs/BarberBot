@@ -443,6 +443,33 @@ async def overall(client, locations: Iterable[int], first: date, last: date,
     return out
 
 
+# ------------------------------------------------------------------ client ratings (reviews.py)
+
+RATINGS_KEY = "bb:ratings"
+
+
+def ratings_between(first: date, last: date, staff_id: Optional[int] = None) -> List[dict]:
+    raw = _kv.pipeline(["HGETALL", RATINGS_KEY])[0] or []
+    out = []
+    for i in range(1, len(raw), 2):
+        try:
+            r = json.loads(raw[i])
+        except (TypeError, ValueError):
+            continue
+        if first.isoformat() <= r.get("d", "") <= last.isoformat() and (staff_id is None or r.get("s") == staff_id):
+            out.append(r)
+    return out
+
+
+def rating_stats(rs: List[dict]) -> dict:
+    by: Dict[int, list] = {}
+    for r in rs:
+        by.setdefault(r.get("s") or 0, []).append(r["r"])
+    avg = lambda xs: round(sum(xs) / len(xs), 2) if xs else None  # noqa: E731
+    return {"avg": avg([r["r"] for r in rs]), "count": len(rs), "low": sum(1 for r in rs if r["r"] <= 3),
+            "by_staff": {str(k): {"avg": avg(v), "count": len(v)} for k, v in by.items()}}
+
+
 # ------------------------------------------------------------------ KPIs and the team
 
 def _kpi(key, label, value, prev, fmt, good, hint, money=False):
@@ -454,7 +481,8 @@ def _per(v, n, digits=0):
     return round(v / n, digits) if n else 0
 
 
-def kpis(book: dict, money: Optional[dict], ov: Optional[dict], ov_prev: Optional[dict]) -> List[dict]:
+def kpis(book: dict, money: Optional[dict], ov: Optional[dict], ov_prev: Optional[dict],
+         rating: Optional[dict] = None, rating_prev: Optional[dict] = None) -> List[dict]:
     """The KPI cards: value, previous period, which direction is good, and how it is counted."""
     c, p = book["current"]["totals"], book["previous"]["totals"]
     nd, npd = len(book["current"]["days"]), max(1, (date.fromisoformat(book["previous"]["last"])
@@ -495,6 +523,10 @@ def kpis(book: dict, money: Optional[dict], ov: Optional[dict], ov_prev: Optiona
         _kpi("services_visit", "Послуг на візит", _per(c["services"], c["visits"], 2),
              _per(p["services"], p["visits"], 2), "num2", "up", "Скільки послуг у середньому за один візит"),
     ]
+    if rating and rating.get("count"):
+        out.append(_kpi("rating", "Оцінка клієнтів", rating["avg"], (rating_prev or {}).get("avg"), "num2", "up",
+                        "Середня оцінка після візиту в боті: %d оцінок, з них %d на 3 і нижче"
+                        % (rating["count"], rating["low"])))
     if ov:
         out.append(_kpi("barber_day", "Виручка майстра за день", _per(c["revenue"], c["barber_days"]),
                         _per(p["revenue"], p["barber_days"]), "money", "up",
@@ -513,7 +545,8 @@ def kpis(book: dict, money: Optional[dict], ov: Optional[dict], ov_prev: Optiona
     return out
 
 
-def team(book: dict, money: Optional[dict], ov_staff: Dict[int, dict], ov_staff_prev: Dict[int, dict]) -> List[dict]:
+def team(book: dict, money: Optional[dict], ov_staff: Dict[int, dict], ov_staff_prev: Dict[int, dict],
+         rating: Optional[dict] = None) -> List[dict]:
     """One row per barber with visits in either period: performance and its change."""
     cur = {b["id"]: b for b in book["current"]["barbers"]}
     prev = {b["id"]: b for b in book["previous"].get("barbers", [])}
@@ -525,7 +558,9 @@ def team(book: dict, money: Optional[dict], ov_staff: Dict[int, dict], ov_staff_
         o, op = ov_staff.get(sid) or {}, ov_staff_prev.get(sid) or {}
         rev, visits, days = b.get("revenue", 0), b.get("visits", 0), b.get("days", 0)
         salary = salaries.get(str(sid))
+        rt = ((rating or {}).get("by_staff") or {}).get(str(sid)) or {}
         rows.append({
+            "rating": rt.get("avg"), "ratings": rt.get("count", 0),
             "id": sid, "name": b.get("name") or pb.get("name") or "#%s" % sid,
             "revenue": rev, "revenue_prev": pb.get("revenue", 0),
             "share": round(100 * rev / total_rev, 1) if total_rev else 0,
@@ -579,15 +614,21 @@ async def full_report(client, locations: Iterable[int], p: str, now: datetime,
             for part in (cur_m, prev_m):
                 part["salaries"] = {k: v for k, v in part["salaries"].items() if k == str(staff_id)}
         money = {"current": cur_m, "previous": {"totals": prev_m["totals"]}}
+    try:
+        rating = rating_stats(await asyncio.to_thread(ratings_between, per["first"], per["last"], staff_id))
+        rating_prev = rating_stats(await asyncio.to_thread(ratings_between, per["prev_first"], per["prev_last"], staff_id))
+    except Exception as e:  # noqa: BLE001 — ratings are an extra
+        logger.warning("ratings: %s", e)
+        rating = rating_prev = None
     out = {"label": per["label"], "bookings": book, "overall": {"current": ov, "previous": ov_prev},
-           "money": money, "kpi": kpis(book, money, ov, ov_prev)}
+           "money": money, "rating": rating, "kpi": kpis(book, money, ov, ov_prev, rating, rating_prev)}
     if with_team and staff_id is None:
         ids = sorted({b["id"] for b in book["current"]["barbers"]} | {b["id"] for b in book["previous"]["barbers"]})
         cur_s, prev_s = {}, {}
         for sid in ids:
             cur_s[sid] = await overall(client, locations, per["first"], per["last"], sid)
             prev_s[sid] = await overall(client, locations, per["prev_first"], per["prev_last"], sid)
-        out["team"] = team(book, money, cur_s, prev_s)
+        out["team"] = team(book, money, cur_s, prev_s, rating)
     return out
 
 

@@ -37,7 +37,9 @@ import admin
 import booking
 import menu
 import reminders
+import reviews
 import team
+import waitlist
 import texts
 from altegio import make_client
 from linkstore import LinkStore
@@ -215,6 +217,8 @@ async def post_shutdown(app: Application) -> None:
 
 async def handle_non_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Any other text: point at the menu."""
+    if await reviews.take_feedback(update, context):  # the comment right after a low rating
+        return
     await update.message.reply_text(texts.FALLBACK, reply_markup=MAIN_MENU_KEYBOARD)
 
 
@@ -244,6 +248,8 @@ def add_handlers(app: Application, persistent: bool = False) -> Application:
     for h in menu.handlers():  # menu buttons, prices, contact sharing outside booking
         app.add_handler(h)
     for h in admin.handlers():  # /admin panel, only for ADMIN_CHAT_IDS
+        app.add_handler(h)
+    for h in reviews.handlers() + waitlist.handlers():  # post-visit rating, "tell me if a time frees up"
         app.add_handler(h)
     app.add_handler(CallbackQueryHandler(booking.stale_button, pattern=r"^bk:"))
     app.add_handler(CommandHandler("start", start))

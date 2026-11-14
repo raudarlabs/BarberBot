@@ -300,7 +300,7 @@
   }
 
   // ---------------------------------------------------------------- team
-  const SORTS = { revenue: 'Гроші', visits: 'Візити', avg: 'Чек', rev_day: 'За день', occupancy: 'Завантаженість', clients: 'Клієнти' };
+  const SORTS = { revenue: 'Гроші', visits: 'Візити', avg: 'Чек', rev_day: 'За день', occupancy: 'Завантаженість', clients: 'Клієнти', rating: 'Оцінка' };
   function teamTab(r) {
     const rows = (r.team || []).slice();
     if (!rows.length) return '<p class="msg">Немає даних за період</p>';
@@ -320,6 +320,7 @@
           <div><small>Нові клієнти</small><b>${x.new_clients ?? '—'}</b></div>
           <div><small>Онлайн-запис</small><b>${pct(x.online)}</b></div>
           <div><small>Неявки</small><b>${x.no_show}</b>${x.unmarked ? `<em class="flat">+${x.unmarked} не відм.</em>` : ''}</div>
+          <div><small>Оцінка клієнтів</small><b>${x.rating != null ? num(x.rating, 1) + ' ★' : '—'}</b>${x.ratings ? `<em class="flat">${x.ratings}</em>` : ''}</div>
           <div><small>Виплачено ЗП</small><b>${x.salary != null ? uah(x.salary) : '—'}</b>${x.salary_share != null ? `<em class="flat">${pct(x.salary_share)}</em>` : ''}</div>
         </div>
       </div>`).join('');

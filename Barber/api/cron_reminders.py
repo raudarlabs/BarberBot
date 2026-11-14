@@ -24,7 +24,9 @@ from telegram.ext import Application  # noqa: E402
 
 import bot  # noqa: E402
 import reminders  # noqa: E402
+import reviews  # noqa: E402
 import team  # noqa: E402
+import waitlist  # noqa: E402
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger("cron_reminders")
@@ -52,6 +54,16 @@ async def run_once() -> dict:
             except Exception:
                 logger.exception("team sync failed")
                 out["team_notified"] = "error"
+            try:
+                out["reviews_asked"] = await reviews.run(client, app.bot_data["links"], locations, app.bot)
+            except Exception:
+                logger.exception("reviews failed")
+                out["reviews_asked"] = "error"
+            try:
+                out["waitlist_told"] = await waitlist.run(client, app.bot_data["links"], app.bot)
+            except Exception:
+                logger.exception("waitlist failed")
+                out["waitlist_told"] = "error"
             try:
                 refreshed = await team.refresh_commands(app.bot)
                 if refreshed:
