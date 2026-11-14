@@ -36,7 +36,7 @@ class SnakeGame {
   resize(w, h) {
     if (!this.rows) {
       const guess = Math.floor(h / (w / COLS));
-      this.rows = clamp(guess, 12, 30);
+      this.rows = clamp(guess, 12, 42); // tall phones get a tall board, no empty bands
     }
     this.cell = Math.floor(Math.min((w - 12) / COLS, (h - 12) / this.rows));
     this.ox = Math.floor((w - this.cell * COLS) / 2);
@@ -232,15 +232,15 @@ export default {
   id: 'snake',
   emoji: '🐍',
   tile: ['#34d27a', '#14864a'],
-  controls: 'dpad',
+  controls: null, // full-screen board, swipe only (arrow keys still work on desktop)
   title: { uk: 'Змійка', en: 'Snake' },
   desc: {
     uk: 'Ніхто не народжується з великим пітоном. Його вирощують.',
     en: 'Nobody is born with a big python. You grow it.',
   },
   how: {
-    uk: 'Свайпай по полю або тисни стрілки. Червоне — +10. Золотий гребінець — +30, але він швидко зникає.',
-    en: 'Swipe on the board or use the arrows. Red dots are +10. The golden comb is +30 — grab it before it fades.',
+    uk: 'Свайпай по екрану, щоб повернути. Червоне — +10. Золотий гребінець — +30, але він швидко зникає.',
+    en: 'Swipe anywhere to turn. Red dots are +10. The golden comb is +30 — grab it before it fades.',
   },
   create: (g) => new SnakeGame(g),
 };
