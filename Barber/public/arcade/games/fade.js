@@ -270,15 +270,16 @@ class FadeGame {
     ctx.fillStyle = '#3b2a22';
     ctx.beginPath(); ctx.arc(cx - R * 0.54, cy + R * 0.06, R * 0.04, 0, TAU); ctx.fill();
     ctx.strokeStyle = 'rgba(80,30,30,0.6)'; ctx.lineWidth = Math.max(1.2, R * 0.03);
-    ctx.beginPath(); ctx.arc(cx - R * 0.6, cy + R * 0.42, R * 0.14, 0.25, Math.PI - 0.6); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx - R * 0.6, cy + R * 0.47, R * 0.11, 0.35, Math.PI - 0.7); ctx.stroke();
     if (c.beard) {
+      // moustache: two soft lobes under the nose; small chin beard
       ctx.fillStyle = c.beard;
+      ctx.beginPath(); ctx.ellipse(cx - R * 0.72, cy + R * 0.43, R * 0.12, R * 0.045, 0.25, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(cx - R * 0.53, cy + R * 0.44, R * 0.1, R * 0.04, -0.2, 0, TAU); ctx.fill();
       ctx.beginPath();
-      ctx.moveTo(cx - R * 0.82, cy + R * 0.44);
-      ctx.quadraticCurveTo(cx - R * 0.62, cy + R * 0.34, cx - R * 0.42, cy + R * 0.45);
-      ctx.quadraticCurveTo(cx - R * 0.62, cy + R * 0.42, cx - R * 0.82, cy + R * 0.44);
-      ctx.lineWidth = R * 0.07; ctx.strokeStyle = c.beard; ctx.stroke(); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(cx - R * 0.62, cy + R * 0.72, R * 0.1, R * 0.08, 0, 0, TAU); ctx.fill();
+      ctx.moveTo(cx - R * 0.7, cy + R * 0.66);
+      ctx.quadraticCurveTo(cx - R * 0.6, cy + R * 0.86, cx - R * 0.5, cy + R * 0.66);
+      ctx.closePath(); ctx.fill();
     }
     ctx.restore();
   }
