@@ -1,8 +1,8 @@
 {
   "outputDirectory": "public",
   "functions": {
-    "api/*.py": {
-      "maxDuration": 10
+    "api/webhook.py": {
+      "maxDuration": 300
     }
   },
   "headers": [
