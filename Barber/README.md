@@ -2,7 +2,7 @@
 
 A Telegram bot for barbershops with two features:
 - **AI Hairstyle Recommendations** — customers send a photo and get 6 personalized hairstyle options generated on their actual photo
-- **Barber Games** — a Telegram Mini App with 5 games customers can play while waiting, with weekly leaderboards
+- **Barber Games** — a Telegram Mini App with 5 games customers can play while waiting, with monthly leaderboards and prizes
 
 ---
 
@@ -16,30 +16,35 @@ Barber/
   api/                 # Vercel Python functions (stdlib only)
     session.py         # POST /api/session      start a server-timed run
     score.py           # POST /api/score        submit a run (anti-cheat checks)
-    leaderboard.py     # GET  /api/leaderboard  weekly / all-time board per game
-    summary.py         # GET  /api/summary      hub data: weekly leaders + my bests
-    _tg.py             # Telegram initData signature check
-    _games.py          # per-game score limits, weekly keys
-    _kv.py             # Upstash Redis (in-memory fallback for local dev)
+    leaderboard.py     # GET  /api/leaderboard  monthly / all-time board, ?month= history (top 10)
+    summary.py         # GET  /api/summary      hub data: month leaders, my bests, my prize codes
+    prize.py           # GET/POST /api/prize    staff: check / hand out a prize code (ARCADE_ADMIN_KEY)
+    idea.py            # POST/GET /api/idea     game ideas from players (form hidden: IDEAS_ENABLED)
+    _tg.py             # Telegram initData signature check (+ failure reason for logs)
+    _games.py          # per-game score limits, Kyiv-month keys, prize codes
+    _kv.py             # store: Neon Postgres (DATABASE_URL) > Upstash > in-memory (dev)
     _http.py           # request/response plumbing
   public/
     index.html         # Barber Games hub (Telegram Mini App)
-    snake_app.html     # redirect for old bot buttons
+    prize.html         # staff page: verify and hand out monthly prizes
+    ideas.html         # staff page: read game ideas
     arcade/            # engine, UI, i18n (uk/en) and games/*.js
-  dev_server.py        # local server: public/ + /api with in-memory Redis
+  dev_server.py        # local server: public/ + /api with in-memory store
   tests/test_api.py    # API tests
+  tests/test_store_pg.py  # Postgres store vs in-memory reference (needs ARCADE_TEST_DATABASE_URL)
+  tests/sim.mjs        # headless bot play + fuzz: checks anti-cheat limits and screen sizes
 ```
 
 ## Barber Games (Mini App)
 
-Five games in one hub, styled after the shop (warm black, wine-red paint, barber-pole stripes):
+Five games in one hub, styled after the shop's new look (warm black wall, wine-red paint, dusty pink):
 
 | Game | Mechanic | Scoring |
 |------|----------|---------|
 | Фен-пілот | one-tap flight between barber poles | +1 per pole, +2 golden comb |
 | Ідеальний фейд | stop the clipper inside the gold band | perfect 10 (+streak), clean 6, okay 3; 3 lives |
 | Борода-ніндзя | swipe to slice beard tufts, avoid lotion | +1 tuft, +5 golden, combo bonus; 3 lives |
-| Змійка | classic snake, swipe or D-pad | +10 food, +30 golden comb |
+| Змійка | classic snake, full-screen, swipe to turn | +10 food, +30 golden comb |
 | Укладка | falling-blocks puzzle | 10/30/50/80 per 1–4 rows × level |
 
 Shared engine: crisp canvas at device pixel ratio, fixed-step loop, auto-pause when Telegram
@@ -50,10 +55,13 @@ is minimised, synth sound with mute, haptics, Telegram back button, safe areas.
   No typed-in names.
 - Each run gets a one-time session token; the server measures run time and rejects scores above
   what the game allows per second (`api/_games.py`, keep in sync with `public/arcade/games/*.js`).
-- Each player's **best** score is kept per game on a weekly board (ISO week, UTC, resets Monday)
-  and an all-time board. Session starts are rate-limited per player.
-- Mini Apps opened from a reply-keyboard button get no `initData`, so the bot opens the arcade
-  from an inline button and the chat menu button.
+- Each player's **best** score is kept per game on a monthly board (Kyiv time, resets on the 1st)
+  and an all-time board. Month boards are never deleted: History shows each month's top 10.
+  Session starts are rate-limited per player. Limits were tuned with `tests/sim.mjs`.
+- The #1 of every game each month sees a prize code in the hub; staff check and hand it out on
+  `/prize.html` (also shows how long the record run took, to spot fakes).
+- Mini Apps opened from a reply-keyboard button get no `initData` (401 `no_init_data` in the
+  logs), so open the arcade from an inline button, the chat menu button or a `startapp` link.
 
 ## Online booking & reminders (Altegio)
 
@@ -209,15 +217,16 @@ ARCADE_WEBAPP_URL=https://your-project.vercel.app/
 
 1. Import the repo in Vercel with **Root Directory = `Barber`**. `vercel.json` serves `public/`
    as the site; `api/*.py` become Python functions.
-2. Storage → connect **Upstash Redis** (sets `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`).
+2. Storage → connect a **Neon** Postgres database (sets `DATABASE_URL`; tables are created on
+   first use). Upstash Redis (`UPSTASH_REDIS_REST_URL`/`TOKEN`) also works.
 3. Settings → Environment Variables → add **`TELEGRAM_BOT_TOKEN`** (same bot that opens the arcade;
-   needed to verify players). Never set `ARCADE_DEV` in Vercel.
+   needed to verify players) and **`ARCADE_ADMIN_KEY`** (staff pages). Never set `ARCADE_DEV` in Vercel.
 4. Set `ARCADE_WEBAPP_URL` in the bot's `.env` to the deployment URL and restart the bot.
 
 ## Local development
 
 ```bash
-python dev_server.py          # http://localhost:8787 — in-memory Redis, plays as "Dev Player"
+python dev_server.py          # http://localhost:8787 — in-memory store, plays as "Dev Player"
 python -m unittest discover -s tests
 ```
 
@@ -250,5 +259,5 @@ python bot.py
 | Image generation | OpenAI `gpt-image-1` (photo editing) |
 | Games | HTML5 Canvas, vanilla JS modules, Telegram WebApp API |
 | Leaderboard API | Vercel serverless Python functions (stdlib) |
-| Score storage | Vercel KV (Upstash Redis) |
+| Score storage | Neon Postgres via HTTP (stdlib), Upstash Redis as fallback |
 | Hosting | Vercel (free tier) |
