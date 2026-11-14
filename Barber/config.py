@@ -7,10 +7,22 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 XAI_API_KEY = os.getenv("XAI_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Arcade Mini App (public/index.html on Vercel). SNAKE_WEBAPP_URL is the old name.
-ARCADE_WEBAPP_URL = os.getenv("ARCADE_WEBAPP_URL") or os.getenv(
-    "SNAKE_WEBAPP_URL", "https://yourdomain.com/"
-)
+def arcade_webapp_url(env=None) -> str:
+    """The games hub URL. ARCADE_WEBAPP_URL, else the older GAMES_WEBAPP_URL / SNAKE_WEBAPP_URL names.
+    An old single-game page (…/snake_app.html, …/tetris_app.html) is mapped to the hub at the site root:
+    those pages redirect to one game and would drop the ?game= of every other button."""
+    from urllib.parse import urlsplit, urlunsplit
+    env = os.environ if env is None else env
+    url = env.get("ARCADE_WEBAPP_URL") or env.get("GAMES_WEBAPP_URL") or env.get("SNAKE_WEBAPP_URL") \
+        or "https://yourdomain.com/"
+    parts = urlsplit(url)
+    if parts.path.rstrip("/").split("/")[-1] in ("snake_app.html", "tetris_app.html", "snake", "tetris"):
+        url = urlunsplit((parts.scheme, parts.netloc, "/", "", ""))
+    return url
+
+
+# Arcade Mini App (public/index.html on Vercel)
+ARCADE_WEBAPP_URL = arcade_webapp_url()
 
 # xAI / Grok API settings
 XAI_BASE_URL = "https://api.x.ai/v1"

@@ -22,7 +22,31 @@
   "redirects": [
     {
       "source": "/snake",
+      "has": [
+        {
+          "type": "query",
+          "key": "game",
+          "value": "(?<g>[a-z]+)"
+        }
+      ],
+      "destination": "/?game=:g",
+      "permanent": false
+    },
+    {
+      "source": "/snake",
       "destination": "/?game=snake",
+      "permanent": false
+    },
+    {
+      "source": "/snake_app.html",
+      "has": [
+        {
+          "type": "query",
+          "key": "game",
+          "value": "(?<g>[a-z]+)"
+        }
+      ],
+      "destination": "/?game=:g",
       "permanent": false
     },
     {
@@ -32,7 +56,31 @@
     },
     {
       "source": "/tetris",
+      "has": [
+        {
+          "type": "query",
+          "key": "game",
+          "value": "(?<g>[a-z]+)"
+        }
+      ],
+      "destination": "/?game=:g",
+      "permanent": false
+    },
+    {
+      "source": "/tetris",
       "destination": "/?game=blocks",
+      "permanent": false
+    },
+    {
+      "source": "/tetris_app.html",
+      "has": [
+        {
+          "type": "query",
+          "key": "game",
+          "value": "(?<g>[a-z]+)"
+        }
+      ],
+      "destination": "/?game=:g",
       "permanent": false
     },
     {

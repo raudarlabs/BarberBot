@@ -144,5 +144,26 @@ class MenuScreenTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await self.links.phone_for_chat(USER))
 
 
+class ArcadeUrlTests(unittest.TestCase):
+    """Bug seen in production: every game button opened Snake (base URL was …/snake_app.html)."""
+
+    def test_old_single_game_pages_map_to_the_hub(self):
+        from config import arcade_webapp_url
+        site = "https://barber-psi-ochre.vercel.app"
+        self.assertEqual(arcade_webapp_url({"SNAKE_WEBAPP_URL": site + "/snake_app.html"}), site + "/")
+        self.assertEqual(arcade_webapp_url({"GAMES_WEBAPP_URL": site + "/", "SNAKE_WEBAPP_URL": site + "/snake_app.html"}),
+                         site + "/")
+        self.assertEqual(arcade_webapp_url({"ARCADE_WEBAPP_URL": site + "/tetris_app.html"}), site + "/")
+        self.assertEqual(arcade_webapp_url({"ARCADE_WEBAPP_URL": site + "/hub/"}), site + "/hub/")
+
+    def test_each_game_button_opens_its_own_game(self):
+        from config import arcade_webapp_url
+        base = arcade_webapp_url({"SNAKE_WEBAPP_URL": "https://barber-psi-ochre.vercel.app/snake_app.html"})
+        urls = {b.text: b.web_app.url for row in menu.games_markup(base).inline_keyboard for b in row}
+        self.assertEqual(urls["🧩 Укладка"], "https://barber-psi-ochre.vercel.app/?game=blocks")
+        self.assertEqual(urls["💨 Фен-пілот"], "https://barber-psi-ochre.vercel.app/?game=dryer")
+        self.assertEqual(urls[T.GAMES_HUB_BUTTON], "https://barber-psi-ochre.vercel.app/")
+
+
 if __name__ == "__main__":
     unittest.main()
