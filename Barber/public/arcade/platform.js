@@ -63,7 +63,12 @@ export function openTelegramLink(url) {
 async function call(path, { method = 'GET', body } = {}) {
   const res = await fetch(path, {
     method,
-    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': (tg && tg.initData) || '' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Telegram-Init-Data': (tg && tg.initData) || '',
+      // diagnostics only: which Telegram client and launch data shape (no user data)
+      'X-Tg-Client': tg ? `${tg.platform || '?'}/${tg.version || '?'}/${tg.initData ? 'init' : 'noinit'}/${tg.initDataUnsafe && tg.initDataUnsafe.user ? 'user' : 'nouser'}` : 'browser',
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
   let data = null;

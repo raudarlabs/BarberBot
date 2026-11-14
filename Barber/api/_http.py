@@ -55,8 +55,10 @@ def dispatch(fn, req):
         return fn(req)
     except BadRequest as e:
         return e.status, {"error": e.code}
-    except AuthError:
-        return 401, {"error": "unauthorized"}
+    except AuthError as e:
+        print("[auth] 401 %s %s reason=%s client=%s" % (req.method, req.path, e.reason,
+                                                         req.headers.get("x-tg-client", "-")), file=sys.stderr)
+        return 401, {"error": "unauthorized", "reason": e.reason}
     except RedisError:
         traceback.print_exc(file=sys.stderr)
         return 503, {"error": "storage_unavailable"}

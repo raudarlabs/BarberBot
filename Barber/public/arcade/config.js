@@ -10,3 +10,6 @@ export const PRIZE = {
   uk: 'приз від Custom Barbershop',
   en: 'a prize from Custom Barbershop',
 };
+
+// "Suggest a game" form in the hub. Off until delivery to the shop is set up.
+export const IDEAS_ENABLED = false;

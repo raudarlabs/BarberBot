@@ -14,7 +14,26 @@ MAX_AGE_SECONDS = 24 * 3600
 
 
 class AuthError(Exception):
-    pass
+    def __init__(self, reason="unauthorized"):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def failure_reason(init_data, bot_token, max_age=MAX_AGE_SECONDS, now=None):
+    """Why validation failed, for logs: no_init_data, no_bot_token, no_hash, bad_hash, expired, no_user."""
+    if not init_data:
+        return "no_init_data"
+    if not bot_token:
+        return "no_bot_token"
+    try:
+        pairs = dict(parse_qsl(init_data, keep_blank_values=True, strict_parsing=True))
+    except ValueError:
+        return "unparsable"
+    if "hash" not in pairs:
+        return "no_hash"
+    if validate_init_data(init_data, bot_token, max_age=0) is None:
+        return "bad_hash" if "user" in pairs else "no_user"
+    return "expired"
 
 
 def validate_init_data(init_data, bot_token, max_age=MAX_AGE_SECONDS, now=None):
@@ -61,9 +80,10 @@ def current_user(init_data, required=True):
     if not init_data and os.environ.get("ARCADE_DEV") == "1":
         return {"id": 1, "first_name": "Dev", "last_name": "Player"}
 
-    user = validate_init_data(init_data, os.environ.get("TELEGRAM_BOT_TOKEN", ""))
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    user = validate_init_data(init_data, token)
     if user is None and required:
-        raise AuthError("unauthorized")
+        raise AuthError(failure_reason(init_data, token))
     return user
 
 

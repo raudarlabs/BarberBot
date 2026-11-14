@@ -1,4 +1,4 @@
-import { BOOKING_URL, BOT_URL, PRIZE } from './config.js';
+import { BOOKING_URL, BOT_URL, IDEAS_ENABLED, PRIZE } from './config.js';
 import { Floaters, Loop, Stage, bindPointer, sfx } from './engine.js';
 import { L, getLang, monthLabel, setLang, t } from './i18n.js';
 import {
@@ -562,6 +562,7 @@ function bind() {
 initTelegram(goBack);
 applyStaticText();
 bind();
+$('ideaBtn').classList.toggle('hidden', !IDEAS_ENABLED);
 openHub();
 // Deep link to a game: t.me/<bot>?startapp=snake, or /?game=snake (old /snake and /tetris URLs redirect here)
 const wanted = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || new URLSearchParams(location.search).get('game');
