@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import sys
+import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler
 
@@ -37,6 +38,7 @@ from altegio import AltegioError, make_client  # noqa: E402
 from config import booking_locations  # noqa: E402
 from stats import collect  # noqa: E402
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dashboard")
 PERIODS = ("7", "30", "90", "month", "prev")
 CACHE_TTL = 300
@@ -99,8 +101,14 @@ def handle(req):
         cached = _kv.cmd("GET", key)
         data = json.loads(cached) if cached else None
     if data is None:
+        started = time.monotonic()
         data = {"period": p, "staff": staff, "report": asyncio.run(_report(p, staff, admin)),
                 "generated": _games.kyiv_now().strftime("%d.%m %H:%M")}
+        r = data["report"]
+        logger.info("[dashboard] built role=%s p=%s staff=%s visits=%s team=%s kpi=%s money=%s error=%s %.1fs",
+                    who["role"], p, staff or "-", (r.get("bookings") or {}).get("current", {}).get("totals", {}).get("visits"),
+                    len(r.get("team") or []), len(r.get("kpi") or []), r.get("money") is not None, r.get("error"),
+                    time.monotonic() - started)
         if admin and staff is None:
             data["games"] = collect()
             try:

@@ -40,6 +40,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 logger = logging.getLogger(__name__)
+logging.getLogger("httpx").setLevel(logging.WARNING)  # request URLs at INFO are noise (and Telegram's carry the token)
 
 DEFAULT_BASE_URL = "https://api.alteg.io/api/v1"
 DEFAULT_TZ = "Europe/Kyiv"
