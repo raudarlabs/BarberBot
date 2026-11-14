@@ -48,7 +48,8 @@ from altegio import AltegioError, normalize_phone
 
 logger = logging.getLogger(__name__)
 
-LOC, STAFF, SERVICE, DAY, TIME, PHONE, CONFIRM = range(7)
+LOC, STAFF, SERVICE, DAY, TIME, PHONE, CONFIRM, ANY = range(8)
+ANY_OPTIONS = 6  # "any barber": how many earliest options to offer
 DAYS_AHEAD = 14
 MAX_TIMES = 88  # 22 rows of 4 + nav row stays under Telegram's 100-button limit
 
@@ -141,8 +142,109 @@ async def show_staff(update, context, back="loc"):
         await _show(update, T.NO_STAFF, InlineKeyboardMarkup([_nav(back)]))
         return STAFF
     buttons = [InlineKeyboardButton("💈 " + s.name, callback_data="bk:stf:%d" % s.id) for s in staff]
-    await _show(update, T.PICK_STAFF + _hint(context), InlineKeyboardMarkup(_rows(buttons, 2) + [_nav(back)]))
+    rows = _rows(buttons, 2)
+    if len(staff) > 1:
+        rows.insert(0, [InlineKeyboardButton(T.ANY_BUTTON, callback_data="bk:any")])
+    await _show(update, T.PICK_STAFF + _hint(context), InlineKeyboardMarkup(rows + [_nav(back)]))
     return STAFF
+
+
+# ------------------------------------------------------------------ any barber, earliest time
+
+def _norm_title(title: str) -> str:
+    return " ".join((title or "").lower().split())
+
+
+async def on_any(update, context):
+    """'⚡ Найближчий час': pick a service by name; the same name groups each barber's own service."""
+    client, _, _ = _deps(context)
+    bk = _bk(context)
+    if "loc" not in bk:
+        return await _expired(update, context)
+    try:
+        names = bk.get("staff_names") or {s.id: s.name for s in await client.list_staff(bk["loc"])}
+        bk["staff_names"] = names
+        groups = {}
+        for sid in names:
+            for svc in await client.list_services(bk["loc"], sid):
+                g = groups.setdefault(_norm_title(svc.title), {"title": svc.title, "by_staff": {}, "order": len(groups)})
+                g["by_staff"].setdefault(sid, svc)
+    except AltegioError as e:
+        return await _api_failed(update, context, e)
+    # The services most barbers offer first; ties keep the shop's own order from Altegio.
+    ordered = sorted(groups.values(), key=lambda g: (-len(g["by_staff"]), g["order"]))
+    bk["any"] = ordered
+    buttons = []
+    for i, g in enumerate(ordered):
+        prices = [s.price_min for s in g["by_staff"].values() if s.price_min]
+        label = g["title"] + (" · від %d ₴" % min(prices) if prices else "")
+        buttons.append([InlineKeyboardButton(label, callback_data="bk:asv:%d" % i)])
+    await _show(update, T.ANY_PICK_SERVICE, InlineKeyboardMarkup(buttons + [_nav("stf")]))
+    return ANY
+
+
+async def on_any_service(update, context):
+    client, _, _ = _deps(context)
+    bk = _bk(context)
+    q = update.callback_query
+    try:
+        group = bk["any"][int(q.data.split(":")[2])]
+    except (KeyError, IndexError, ValueError):
+        return await _expired(update, context)
+    await q.answer()
+    try:  # searching across every barber takes a few seconds: say so first
+        await q.edit_message_text(T.ANY_SEARCHING)
+    except Exception:
+        pass
+    now = datetime.now(client.tz)
+    options = []
+    try:
+        for sid, svc in group["by_staff"].items():
+            days = await client.booking_dates(bk["loc"], sid, [svc.id], now.date(), DAYS_AHEAD)
+            for day in days[:2]:  # today's slots may all be gone already
+                starts = await client.booking_times(bk["loc"], sid, day, [svc.id])
+                if starts:
+                    options.append((starts[0], sid, svc))
+                    break
+    except AltegioError as e:
+        return await _api_failed(update, context, e)
+    options.sort(key=lambda o: o[0])
+    nav = _nav("stf")
+    if not options:
+        await _edit(update, T.ANY_NONE.format(service=group["title"]), InlineKeyboardMarkup([nav]))
+        return ANY
+    names = bk.get("staff_names") or {}
+    rows = []
+    for start, sid, svc in options[:ANY_OPTIONS]:
+        label = "%s · %s%s" % (T.slot_button(start, now), names.get(sid, ""),
+                               (" · " + svc.price_label) if svc.price_label else "")
+        rows.append([InlineKeyboardButton(label, callback_data="bk:ago:%d:%d:%s" % (sid, svc.id, start.strftime("%Y%m%d%H%M")))])
+    await _edit(update, T.ANY_PICK_TIME.format(service=group["title"]), InlineKeyboardMarkup(rows + [nav]))
+    return ANY
+
+
+async def on_any_go(update, context):
+    """An option picked: continue exactly like a manual booking at the phone / summary step."""
+    bk = _bk(context)
+    try:
+        _, _, sid, svc_id, stamp = update.callback_query.data.split(":")
+        sid, svc_id = int(sid), int(svc_id)
+        svc = next(g["by_staff"][sid] for g in bk.get("any", []) if g["by_staff"].get(sid) and g["by_staff"][sid].id == svc_id)
+    except (ValueError, StopIteration, KeyError):
+        return await _expired(update, context)
+    bk.update(staff_id=sid, staff_name=(bk.get("staff_names") or {}).get(sid, ""), service_id=svc.id,
+              duration=svc.duration, services={svc.id: svc},
+              day="%s-%s-%s" % (stamp[:4], stamp[4:6], stamp[6:8]), time=stamp[8:12])
+    await update.callback_query.answer()
+    return await _after_time(update, context)
+
+
+async def _edit(update, text, markup):
+    """Edit the flow message after the callback was already answered (no second answer())."""
+    try:
+        await update.callback_query.edit_message_text(text, reply_markup=markup)
+    except Exception:
+        await update.effective_chat.send_message(text, reply_markup=markup)
 
 
 async def show_services(update, context):
@@ -733,7 +835,10 @@ def build_handler(persistent: bool = False) -> ConversationHandler:
         ],
         states={
             LOC: [CallbackQueryHandler(on_location, pattern=r"^bk:loc:\d+$")] + nav,
-            STAFF: [CallbackQueryHandler(on_staff, pattern=r"^bk:stf:\d+$")] + nav,
+            STAFF: [CallbackQueryHandler(on_staff, pattern=r"^bk:stf:\d+$"),
+                    CallbackQueryHandler(on_any, pattern=r"^bk:any$")] + nav,
+            ANY: [CallbackQueryHandler(on_any_service, pattern=r"^bk:asv:\d+$"),
+                  CallbackQueryHandler(on_any_go, pattern=r"^bk:ago:\d+:\d+:\d{12}$")] + nav,
             SERVICE: [CallbackQueryHandler(on_service, pattern=r"^bk:svc:\d+$")] + nav,
             DAY: [CallbackQueryHandler(on_day, pattern=r"^bk:day:[\d-]+$")] + nav,
             TIME: [CallbackQueryHandler(on_time, pattern=r"^bk:t:\d{4}$")] + nav,

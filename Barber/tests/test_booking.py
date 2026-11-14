@@ -118,6 +118,43 @@ class BookingFlowTests(_FlowBase):
         for part in ("Новий запис", "Тарас Коваль", "+380671234567", "Ігор Халай", "15:00"):
             self.assertIn(part, text)
 
+    async def test_any_barber_earliest_time(self):
+        await booking.start_booking(FakeUpdate(self.chat, USER, message=FakeMessage(self.chat)), self.ctx)
+        state, q = await self.press(booking.on_location, "bk:loc:%d" % LOC)
+        self.assertEqual(buttons(q.edits[-1][1])[0], (T.ANY_BUTTON, "bk:any"))
+
+        state, q = await self.press(booking.on_any, "bk:any")
+        self.assertEqual(state, booking.ANY)
+        services = [b for b in buttons(q.edits[-1][1]) if b[1].startswith("bk:asv:")]
+        # each barber's own "Чоловіча стрижка" is one choice, offered by both → listed first
+        self.assertTrue(services[0][0].startswith("Чоловіча стрижка · від"))
+
+        state, q = await self.press(booking.on_any_service, services[0][1])
+        self.assertEqual(state, booking.ANY)
+        self.assertEqual(q.edits[0][0], T.ANY_SEARCHING)
+        text, markup = q.edits[-1]
+        self.assertIn("Чоловіча стрижка", text)
+        options = [b for b in buttons(markup) if b[1].startswith("bk:ago:")]
+        self.assertGreaterEqual(len(options), 2)  # Ігор and Віктор both have time
+        stamps = [o[1].rsplit(":", 1)[1] for o in options]
+        self.assertEqual(stamps, sorted(stamps))  # earliest first
+        self.assertTrue(any("Ігор" in o[0] for o in options) and any("Віктор" in o[0] for o in options))
+
+        pick = options[0][1]
+        _, _, sid, svc_id, stamp = pick.split(":")
+        state, q = await self.press(booking.on_any_go, pick)
+        self.assertEqual(state, booking.PHONE)
+        own = Contact("+380 67 123 45 67", "Тарас", user_id=USER)
+        state = await booking.on_contact(FakeUpdate(self.chat, USER, message=FakeMessage(self.chat, contact=own)), self.ctx)
+        self.assertEqual(state, booking.CONFIRM)
+        state, q = await self.press(booking.on_confirm, "bk:ok")
+        self.assertEqual(state, ConversationHandler.END)
+        appt = next(iter(self.backend.appointments.values()))
+        self.assertEqual(appt["staff_id"], int(sid))
+        self.assertTrue(appt["datetime"].startswith("%s-%s-%sT%s:%s" % (stamp[:4], stamp[4:6], stamp[6:8], stamp[8:10], stamp[10:12])))
+        body = [r for r in self.backend.requests if r[0] == "POST"][-1][3]
+        self.assertEqual(body["services"], [{"id": int(svc_id)}])
+
     async def test_full_booking_with_contact_share(self):
         await self.walk_to_time()
         state, q = await self.press(booking.on_time, "bk:t:1500")

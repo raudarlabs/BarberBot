@@ -19,6 +19,13 @@ def when(dt: datetime) -> str:
     return "%s, %d %s о %s" % (WEEKDAYS[dt.weekday()], dt.day, MONTHS_GEN[dt.month - 1], dt.strftime("%H:%M"))
 
 
+def slot_button(dt: datetime, now: datetime) -> str:
+    """Short slot label for buttons: 'Сьогодні 17:00', 'Завтра 10:00', 'Пн 17.11 10:00'."""
+    delta = (dt.date() - now.date()).days
+    day = "Сьогодні" if delta == 0 else "Завтра" if delta == 1 else day_button(dt.date())
+    return "%s %s" % (day, dt.strftime("%H:%M"))
+
+
 def relative_day(dt: datetime, now: datetime) -> str:
     delta = (dt.date() - now.date()).days
     if delta == 0:
@@ -35,6 +42,11 @@ SESSION_EXPIRED = "Ця кнопка вже неактуальна. Почніт
 
 PICK_LOCATION = "Оберіть барбершоп:"
 PICK_STAFF = "Оберіть майстра:"
+ANY_BUTTON = "⚡ Найближчий час — будь-який майстер"
+ANY_PICK_SERVICE = "Яка послуга? Знайду найближчий вільний час серед усіх майстрів:"
+ANY_SEARCHING = "Шукаю найближчий вільний час… ⏳"
+ANY_PICK_TIME = "Найближчий вільний час — «{service}»:"
+ANY_NONE = "На найближчі два тижні вільного часу на «{service}» немає. Спробуйте іншу послугу або зателефонуйте нам."
 NO_STAFF = "У цьому барбершопі зараз немає майстрів для онлайн-запису."
 PICK_SERVICE = "Послуги майстра {staff}:"
 NO_SERVICES = "У майстра {staff} немає послуг для онлайн-запису."
