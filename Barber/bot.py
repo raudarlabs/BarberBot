@@ -1,8 +1,13 @@
 import io
 import logging
-from telegram import Update, InputMediaPhoto, ReplyKeyboardMarkup, WebAppInfo, KeyboardButton
+from telegram import (
+    Update,
+    MenuButtonWebApp,
+    WebAppInfo,
+)
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
     MessageHandler,
     filters,
@@ -12,13 +17,20 @@ from telegram.constants import ChatAction
 
 from config import (
     TELEGRAM_BOT_TOKEN,
-    WELCOME_MESSAGE,
     PROCESSING_MESSAGE,
     ERROR_MESSAGE,
     NO_FACE_MESSAGE,
-    SNAKE_WEBAPP_URL,
+    ARCADE_WEBAPP_URL,
 )
+from config import REMINDER_INTERVAL, SHOP, booking_locations
 from openai_service import analyze_photo_and_get_hairstyles, generate_all_hairstyle_images
+import booking
+import menu
+import reminders
+import texts
+from altegio import make_client
+from linkstore import LinkStore
+from voice import make_assistant
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -26,30 +38,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-MAIN_MENU_KEYBOARD = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton("Choose Hair Style")],
-        [KeyboardButton("Play", web_app=WebAppInfo(url=SNAKE_WEBAPP_URL))],
-    ],
-    resize_keyboard=True,
-)
+# Bottom menu: Записатися · Мій запис / Підібрати стрижку · Ігри / Послуги й ціни · Контакти.
+# "🎮 Ігри" answers with INLINE web_app buttons (menu.games_markup), never a reply-keyboard
+# web_app button: only inline / chat-menu launches hand the Mini App the signed initData
+# the leaderboard API needs to know who is playing.
+MAIN_MENU_KEYBOARD = menu.main_menu_keyboard()
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles /start command."""
-    await update.message.reply_text(WELCOME_MESSAGE, reply_markup=MAIN_MENU_KEYBOARD)
+    await update.message.reply_text(texts.WELCOME, reply_markup=MAIN_MENU_KEYBOARD)
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles /help command."""
     await update.message.reply_text(
-        "How to use this bot:\n\n"
-        "1. Take or choose a clear photo of your face\n"
-        "2. Send it to this chat\n"
-        "3. Wait while AI analyzes your features (~30-60 seconds)\n"
-        "4. Receive 6 personalized hairstyle options!\n\n"
-        "Or tap 'Play' to play the Snake game!\n\n"
-        "For best results use a well-lit, front-facing photo.",
+        texts.HELP,
         reply_markup=MAIN_MENU_KEYBOARD,
     )
 
@@ -79,7 +83,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         # Step 1: Analyze photo with GPT-4 Vision
         await processing_msg.edit_text(
-            "Step 1/3: Analyzing your face shape and hair type..."
+            "Крок 1/3: аналізую форму обличчя і тип волосся…"
         )
 
         analysis = await analyze_photo_and_get_hairstyles(bytes(photo_bytes))
@@ -97,8 +101,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         # Step 2: Edit original photo with gpt-image-1
         await processing_msg.edit_text(
-            f"Step 2/3: Generating 6 hairstyle options on your photo...\n"
-            "This takes about 30-60 seconds."
+            "Крок 2/3: генерую 6 стрижок на вашому фото…\n"
+            "Це займає 30–60 секунд."
         )
 
         generated = await generate_all_hairstyle_images(analysis, bytes(photo_bytes))
@@ -109,13 +113,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         # Step 3: Send results
         await processing_msg.edit_text(
-            f"Step 3/3: Sending your {len(generated)} hairstyle options..."
+            f"Крок 3/3: надсилаю {len(generated)} варіантів…"
         )
 
         # Build summary caption
         summary_lines = [
-            f"Here are your {len(generated)} personalized hairstyle options!\n",
-            f"Hair type: {hair_type}\n",
+            f"Ваші {len(generated)} варіантів стрижки!\n",
+            f"Тип волосся: {hair_type}\n",
         ]
         for i, style in enumerate(generated, 1):
             summary_lines.append(f"{i}. {style['name']}")
@@ -125,7 +129,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         # Send each hairstyle as a photo with caption
         for i, style in enumerate(generated, 1):
             caption = (
-                f"Option {i}: {style['name']}\n\n"
+                f"Варіант {i}: {style['name']}\n\n"
                 f"{style['reason']}"
             )
             # Truncate caption to Telegram's 1024-char limit
@@ -140,7 +144,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         await processing_msg.delete()
         await update.message.reply_text(
-            "Done! Show these to your barber and pick your favorite style."
+            "Готово! Покажіть варіанти майстру й оберіть улюблений ✂️\n"
+            "Записатися — кнопка «📅 Записатися» нижче.",
+            reply_markup=MAIN_MENU_KEYBOARD,
         )
 
         logger.info(f"Successfully sent {len(generated)} hairstyles to user {user.id}")
@@ -150,22 +156,39 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await processing_msg.edit_text(ERROR_MESSAGE)
 
 
-async def handle_choose_hair_style(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handles the 'Choose Hair Style' button."""
-    await update.message.reply_text(
-        "Please send me a photo of your face to get hairstyle recommendations.",
-        reply_markup=MAIN_MENU_KEYBOARD,
+async def post_init(app: Application) -> None:
+    """Put the arcade on the chat menu button; set up Altegio booking and reminders."""
+    await app.bot.set_chat_menu_button(
+        menu_button=MenuButtonWebApp(text="🎮 Ігри", web_app=WebAppInfo(url=ARCADE_WEBAPP_URL))
     )
+    client = make_client()  # None when Altegio tokens are missing (and ALTEGIO_MOCK != 1)
+    app.bot_data.update(
+        altegio=client,
+        links=LinkStore(),
+        locations=booking_locations(),
+        main_menu=MAIN_MENU_KEYBOARD,
+        menu_dispatch=menu.dispatch,
+        arcade_url=ARCADE_WEBAPP_URL,
+        shop=SHOP,
+        voice=make_assistant(),  # None without OPENAI_API_KEY or with VOICE_BOOKING=0
+    )
+    if client is not None:
+        if app.job_queue is None:
+            logger.error("No JobQueue: install python-telegram-bot[job-queue]; visit reminders are OFF")
+        else:
+            app.job_queue.run_repeating(reminders.reminder_job, interval=REMINDER_INTERVAL, first=30,
+                                        name="altegio-reminders")
+
+
+async def post_shutdown(app: Application) -> None:
+    client = app.bot_data.get("altegio")
+    if client is not None:
+        await client.aclose()
 
 
 async def handle_non_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handles text or non-photo messages."""
-    await update.message.reply_text(
-        "Please send me a photo of your face to get hairstyle recommendations.\n"
-        "Or tap 'Play' to play the Snake game!\n"
-        "Use /start to see instructions.",
-        reply_markup=MAIN_MENU_KEYBOARD,
-    )
+    """Any other text: point at the menu."""
+    await update.message.reply_text(texts.FALLBACK, reply_markup=MAIN_MENU_KEYBOARD)
 
 
 def main() -> None:
@@ -173,12 +196,24 @@ def main() -> None:
     if not TELEGRAM_BOT_TOKEN:
         raise ValueError("TELEGRAM_BOT_TOKEN is not set in .env file")
 
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    app = (
+        Application.builder()
+        .token(TELEGRAM_BOT_TOKEN)
+        .post_init(post_init)
+        .post_shutdown(post_shutdown)
+        .build()
+    )
 
+    # Booking first: its contact/text steps must win over the catch-all text handler below.
+    app.add_handler(booking.build_handler())
+    for h in reminders.handlers():
+        app.add_handler(h)
+    for h in menu.handlers():  # menu buttons, prices, contact sharing outside booking
+        app.add_handler(h)
+    app.add_handler(CallbackQueryHandler(booking.stale_button, pattern=r"^bk:"))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.Regex(r"^Choose Hair Style$"), handle_choose_hair_style))
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_non_photo)
     )

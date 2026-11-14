@@ -1,0 +1,215 @@
+"""
+Visit reminders in Telegram, 24 h and 2 h before the appointment.
+
+Altegio has no webhooks, so a JobQueue job polls every REMINDER_INTERVAL seconds
+(default 10 min): it lists the next day's appointments per location, finds the
+client's chat, and sends each reminder once ("✅ Буду" / "🔁 Перенести").
+
+A chat is found by, in order:
+  1. the appointment itself, if it was booked (or already reminded) in this bot;
+  2. the client's phone (from the appointment, or the Altegio client card,
+     cached for a week) matched against phones shared with the contact button.
+Clients who never shared their number here get no Telegram reminder; Altegio's
+own SMS reminders are unaffected.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+from datetime import datetime, timedelta
+from typing import Awaitable, Callable, Dict, Optional
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.error import BadRequest, Forbidden, TelegramError
+from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes
+
+import texts as T
+from altegio import AltegioError, Appointment
+
+logger = logging.getLogger(__name__)
+
+# kind -> (lower bound exclusive, upper bound inclusive) of time left until the visit.
+# The 24 h reminder is skipped once it is too close to the 2 h one.
+WINDOWS = {
+    "24h": (timedelta(hours=3), timedelta(hours=24)),
+    "2h": (timedelta(minutes=0), timedelta(hours=2)),
+}
+LOOKAHEAD = timedelta(hours=24, minutes=15)
+
+_run_lock = asyncio.Lock()
+
+
+def due_kind(appt: Appointment, now: datetime) -> Optional[str]:
+    if not appt.active:
+        return None
+    left = appt.start - now
+    for kind, (lo, hi) in WINDOWS.items():
+        if lo < left <= hi:
+            return kind
+    return None
+
+
+def reminder_message(appt: Appointment, kind: str, now: datetime, staff_name: str, location: str):
+    service = " (%s)" % appt.service_titles if appt.service_titles else ""
+    if kind == "24h":
+        text = T.REMINDER_24H.format(rel=T.relative_day(appt.start, now), staff=staff_name,
+                                     service=service, location=location)
+    else:
+        text = T.REMINDER_2H.format(time=appt.start.strftime("%H:%M"), staff=staff_name, location=location)
+    return text, move_confirm_buttons(appt)
+
+
+def move_confirm_buttons(appt: Appointment) -> InlineKeyboardMarkup:
+    """"✅ Буду" (only while unconfirmed) and "🔁 Перенести" for one visit."""
+    row = []
+    if appt.status == "waiting":
+        row.append(InlineKeyboardButton(T.REMINDER_CONFIRM, callback_data="rm:ok:%d:%d" % (appt.location_id, appt.id)))
+    row.append(InlineKeyboardButton(T.REMINDER_MOVE, callback_data="rm:mv:%d:%d" % (appt.location_id, appt.id)))
+    return InlineKeyboardMarkup([row])
+
+
+async def find_chat(appt: Appointment, client, links) -> Optional[int]:
+    chat = await links.chat_for_appointment(appt.location_id, appt.id)
+    if chat:
+        return chat
+    phone = appt.client_phone
+    if not phone and appt.client_id:
+        cached = await links.cached_client_phone(appt.location_id, appt.client_id)
+        if cached is None:
+            try:
+                phone = await client.get_client_phone(appt.location_id, appt.client_id)
+            except AltegioError as e:
+                if e.status != 404:
+                    raise
+                phone = ""
+            await links.cache_client_phone(appt.location_id, appt.client_id, phone)
+        else:
+            phone = "" if cached == "-" else cached
+    chat = await links.chat_for_phone(phone) if phone else None
+    if chat and appt.client_id:
+        await links.remember_client_id(appt.location_id, phone, appt.client_id)
+    return chat
+
+
+SendFn = Callable[..., Awaitable[object]]
+
+
+async def run_reminders(client, links, locations: Dict[int, str], send: SendFn,
+                        now: Optional[datetime] = None) -> int:
+    """One polling pass. Returns how many reminders were sent."""
+    now = now or datetime.now(client.tz)
+    sent = 0
+    for loc, address in locations.items():
+        try:
+            appts = await client.list_appointments(loc, now, now + LOOKAHEAD)
+        except AltegioError as e:
+            logger.warning("reminders: cannot list appointments for %s: %s", loc, e)
+            continue
+        staff_names = None
+        for appt in appts:
+            kind = due_kind(appt, now)
+            if not kind:
+                continue
+            key = "%s:%d" % (kind, int(appt.start.timestamp()))  # a moved visit is reminded again
+            if await links.was_sent(appt.id, key):
+                continue
+            try:
+                chat = await find_chat(appt, client, links)
+            except AltegioError as e:
+                logger.warning("reminders: client lookup failed for %s: %s", appt.id, e)
+                continue
+            if not chat or await links.opted_out(chat):
+                continue
+            name = appt.staff_name
+            if not name:
+                if staff_names is None:
+                    try:
+                        staff_names = {s.id: s.name for s in await client.list_staff(loc)}
+                    except AltegioError:
+                        staff_names = {}
+                name = staff_names.get(appt.staff_id, "")
+            text, markup = reminder_message(appt, kind, now, name, address)
+            try:
+                await send(chat_id=chat, text=text, reply_markup=markup)
+                sent += 1
+            except (Forbidden, BadRequest) as e:
+                # Permanent for this chat: mark it so a blocked chat is not retried every 10 min.
+                logger.info("reminders: chat %s refused the reminder: %s", chat, e)
+            except TelegramError as e:
+                # Timeouts, flood control, network: leave it unmarked, the next pass retries.
+                logger.warning("reminders: send to %s failed, will retry: %s", chat, e)
+                continue
+            await links.mark_sent(appt.id, key)
+            await links.remember_appointment(loc, appt.id, chat)
+    return sent
+
+
+async def reminder_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    bd = context.application.bot_data
+    client = bd.get("altegio")
+    if client is None or _run_lock.locked():
+        return
+    async with _run_lock:
+        try:
+            n = await run_reminders(client, bd["links"], bd.get("locations") or {}, context.bot.send_message)
+            if n:
+                logger.info("reminders: sent %d", n)
+        except Exception:
+            logger.exception("reminders: pass failed")
+
+
+async def on_confirm_visit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Button rm:ok:{loc}:{appointment_id} -> attendance 2 (client confirmed)."""
+    q = update.callback_query
+    bd = context.application.bot_data
+    client, links = bd.get("altegio"), bd.get("links")
+    try:
+        _, _, loc, appt_id = q.data.split(":")
+        loc, appt_id = int(loc), int(appt_id)
+    except ValueError:
+        await q.answer()
+        return
+    if client is None:
+        await q.answer(T.UNAVAILABLE, show_alert=True)
+        return
+    if await links.chat_for_appointment(loc, appt_id) != update.effective_chat.id:
+        await q.answer(T.NOT_YOURS, show_alert=True)
+        return
+    try:
+        appt = await client.get_appointment(loc, appt_id)
+        if appt.status == "confirmed":
+            await q.answer(T.CONFIRMED)
+            return
+        # Never overwrite arrived / no-show, and never confirm a cancelled or past visit.
+        if not appt.active or appt.start <= datetime.now(client.tz):
+            await q.answer(T.CANT_CHANGE, show_alert=True)
+            try:
+                await q.edit_message_reply_markup(None)
+            except BadRequest:
+                pass
+            return
+        await client.confirm_appointment(loc, appt_id)
+    except AltegioError as e:
+        logger.warning("confirm %s/%s failed: %s", loc, appt_id, e)
+        await q.answer(T.CANT_CHANGE, show_alert=True)
+        return
+    await q.answer(T.CONFIRMED)
+    move = InlineKeyboardMarkup([[InlineKeyboardButton(T.REMINDER_MOVE, callback_data="rm:mv:%d:%d" % (loc, appt_id))]])
+    try:
+        await q.edit_message_text((q.message.text or "") + "\n\n" + T.CONFIRMED, reply_markup=move)
+    except BadRequest:
+        pass
+
+
+async def unlink_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/stop_reminders: forget this chat's phone."""
+    links = context.application.bot_data.get("links")
+    done = links is not None and await links.unlink(update.effective_chat.id)
+    await update.effective_chat.send_message(T.UNLINKED if done else T.NOT_LINKED)
+
+
+def handlers():
+    return [
+        CallbackQueryHandler(on_confirm_visit, pattern=r"^rm:ok:\d+:\d+$"),
+        CommandHandler("stop_reminders", unlink_command),
+    ]
