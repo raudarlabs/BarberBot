@@ -6,6 +6,10 @@ const FOOD_POINTS = 10;
 const BONUS_POINTS = 30;
 const BONUS_EVERY = 5;
 const BONUS_TTL = 5.5;
+// Seconds per step: starts calm, speeds up a little with every food, never faster than MIN_INTERVAL.
+const START_INTERVAL = 0.2;
+const MIN_INTERVAL = 0.1;
+const SPEEDUP = 0.0022;
 const DIRS = { up: { x: 0, y: -1 }, down: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } };
 
 export function drawComb(ctx, x, y, s, color = COLORS.gold) {
@@ -51,7 +55,7 @@ class SnakeGame {
     this.dir = DIRS.right;
     this.queue = [];
     this.tick = 0;
-    this.interval = 0.15;
+    this.interval = START_INTERVAL;
     this.eaten = 0;
     this.bonus = null;
     this.dead = false;
@@ -130,7 +134,7 @@ class SnakeGame {
       this.g.haptic('light');
       this.fx.burst(at.x, at.y, 10, { colors: [COLORS.red, '#ff8a80', COLORS.cream], speed: 160, life: 0.5, size: 3 });
       this.food = this.freeCell();
-      this.interval = Math.max(0.07, 0.15 - this.eaten * 0.0035);
+      this.interval = Math.max(MIN_INTERVAL, START_INTERVAL - this.eaten * SPEEDUP);
       if (this.eaten % BONUS_EVERY === 0 && !this.bonus) {
         const c = this.freeCell();
         if (c) this.bonus = { ...c, ttl: BONUS_TTL };
