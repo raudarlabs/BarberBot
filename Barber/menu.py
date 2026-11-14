@@ -23,6 +23,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     KeyboardButton,
+    MenuButtonWebApp,
     ReplyKeyboardMarkup,
     Update,
     WebAppInfo,
@@ -58,6 +59,15 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
         is_persistent=True,
         input_field_placeholder=T.MENU_PLACEHOLDER,
     )
+
+
+def chat_menu_button(mode: str, arcade_url: str, booking_url: str, booking_text: str):
+    """The button left of the message field: Altegio booking page, the arcade, or None (leave as is)."""
+    if mode == "arcade":
+        return MenuButtonWebApp(text=T.MENU_GAMES, web_app=WebAppInfo(url=arcade_url))
+    if mode == "booking" and booking_url:
+        return MenuButtonWebApp(text=booking_text, web_app=WebAppInfo(url=booking_url))
+    return None
 
 
 def game_url(base: str, game_id: str = "") -> str:
@@ -269,6 +279,8 @@ ROUTES = {
     T.LEGACY_STYLE: show_style,
     T.MENU_GAMES: show_games,
     T.LEGACY_GAMES: show_games,
+    T.LEGACY_STYLE_UK: show_style,
+    T.LEGACY_GAMES_UK: show_games,
     T.MENU_PRICES: show_prices,
     T.MENU_CONTACTS: show_contacts,
 }

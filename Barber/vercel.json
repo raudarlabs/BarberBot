@@ -3,6 +3,9 @@
   "functions": {
     "api/webhook.py": {
       "maxDuration": 300
+    },
+    "api/cron_reminders.py": {
+      "maxDuration": 120
     }
   },
   "headers": [
@@ -36,6 +39,12 @@
       "source": "/tetris_app.html",
       "destination": "/?game=blocks",
       "permanent": false
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron_reminders",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

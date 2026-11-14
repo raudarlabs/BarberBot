@@ -70,6 +70,8 @@ class PostgresConformance(unittest.TestCase):
         h = self.p + "users"
         self.both(["HSET", h, "111", "Olena K.", "222", "Тарас"], ["HSET", h, "111", "Olena"],
                   ["HMGET", h, "222", "111", "999"], ["HMGET", self.p + "none", "1"])
+        self.both(["HGETALL", h], ["HDEL", h, "111", "nope"], ["HGETALL", h], ["HDEL", h, "222"],
+                  ["HGETALL", h], ["HGETALL", self.p + "none"])
 
 
 if __name__ == "__main__":

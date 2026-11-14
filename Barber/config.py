@@ -66,6 +66,13 @@ def booking_locations():
 
 REMINDER_INTERVAL = int(os.getenv("REMINDER_INTERVAL", "600"))  # seconds between Altegio polls
 
+# --- Chat menu button (left of the message field).
+# "booking" (default): the shop's Altegio online-booking page, as the live bot has today.
+# "arcade": Barber Games. "none": leave whatever is set in BotFather untouched.
+CHAT_MENU_BUTTON = os.getenv("CHAT_MENU_BUTTON", "booking").strip().lower()
+CHAT_MENU_BOOKING_TEXT = os.getenv("CHAT_MENU_BOOKING_TEXT", "Записатись")
+BOOKING_WIDGET_URL = os.getenv("BOOKING_WIDGET_URL", "https://n308628.alteg.io/company/297851/personal/menu?o=")
+
 # --- Shop facts for the "📍 Контакти" screen. Mirrors the website's single source of truth
 # (Barber site repo: src/data/site.ts) - change them there and here together.
 SHOP = {

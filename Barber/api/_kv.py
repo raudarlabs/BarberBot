@@ -10,7 +10,7 @@ Backends, first match wins:
 3. In-memory stand-in for local dev and tests (ARCADE_DEV=1).
 
 Supported commands: SET [EX n] [NX], GET, GETDEL, INCR, EXPIRE, ZADD [GT],
-ZREVRANGE [WITHSCORES], ZREVRANK, ZSCORE, ZCARD, HSET, HMGET.
+ZREVRANGE [WITHSCORES], ZREVRANK, ZSCORE, ZCARD, HSET, HMGET, HGETALL, HDEL.
 """
 import json
 import os
@@ -182,6 +182,12 @@ def _sql(c):
         sql = ("insert into arcade_hs (k, f, v) values %s on conflict (k, f) do update set v = excluded.v"
                " returning (xmax = 0)::int" % ", ".join(values))
         return sql, params, lambda rows: sum(int(r[0]) for r in rows)
+    if op == "HGETALL":
+        return ("select f, v from arcade_hs where k = $1 order by f", [a[0]],
+                lambda rows: [x for f, v in rows for x in (f, v)])
+    if op == "HDEL":
+        marks = ", ".join("$%d" % (i + 2) for i in range(len(a) - 1))
+        return ("delete from arcade_hs where k = $1 and f in (%s) returning 1" % marks, list(a), len)
     if op == "HMGET":
         fields = list(a[1:])
         marks = ", ".join("$%d" % (i + 2) for i in range(len(fields)))
@@ -340,6 +346,12 @@ class MemoryRedis:
         if op == "HMGET":
             h = self.data.get(a[0], {}) if self._alive(a[0]) else {}
             return [h.get(f) for f in a[1:]]
+        if op == "HGETALL":
+            h = self.data.get(a[0], {}) if self._alive(a[0]) else {}
+            return [x for f in sorted(h) for x in (f, h[f])]
+        if op == "HDEL":
+            h = self.data.get(a[0], {}) if self._alive(a[0]) else {}
+            return sum(1 for f in a[1:] if h.pop(f, None) is not None)
         raise RedisError("MemoryRedis: unsupported command " + op)
 
 

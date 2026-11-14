@@ -1,10 +1,6 @@
 import io
 import logging
-from telegram import (
-    Update,
-    MenuButtonWebApp,
-    WebAppInfo,
-)
+from telegram import Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -22,7 +18,14 @@ from config import (
     NO_FACE_MESSAGE,
     ARCADE_WEBAPP_URL,
 )
-from config import REMINDER_INTERVAL, SHOP, booking_locations
+from config import (
+    BOOKING_WIDGET_URL,
+    CHAT_MENU_BOOKING_TEXT,
+    CHAT_MENU_BUTTON,
+    REMINDER_INTERVAL,
+    SHOP,
+    booking_locations,
+)
 from openai_service import analyze_photo_and_get_hairstyles, generate_all_hairstyle_images
 import booking
 import menu
@@ -76,7 +79,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             action=ChatAction.UPLOAD_PHOTO,
         )
 
-        photo_file = await update.message.photo[-1].get_file()
+        # A compressed photo, or a photo sent as a file (document)
+        if update.message.photo:
+            photo_file = await update.message.photo[-1].get_file()
+        else:
+            photo_file = await update.message.document.get_file()
         photo_bytes = await photo_file.download_as_bytearray()
 
         logger.info(f"Downloaded photo ({len(photo_bytes)} bytes) from user {user.id}")
@@ -156,11 +163,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await processing_msg.edit_text(ERROR_MESSAGE)
 
 
-async def post_init(app: Application) -> None:
-    """Put the arcade on the chat menu button; set up Altegio booking and reminders."""
-    await app.bot.set_chat_menu_button(
-        menu_button=MenuButtonWebApp(text="🎮 Ігри", web_app=WebAppInfo(url=ARCADE_WEBAPP_URL))
-    )
+def prepare(app: Application) -> None:
+    """Shared services in bot_data (Altegio client, phone links, menu...). Used by polling and webhook."""
     client = make_client()  # None when Altegio tokens are missing (and ALTEGIO_MOCK != 1)
     app.bot_data.update(
         altegio=client,
@@ -172,6 +176,16 @@ async def post_init(app: Application) -> None:
         shop=SHOP,
         voice=make_assistant(),  # None without OPENAI_API_KEY or with VOICE_BOOKING=0
     )
+
+
+async def post_init(app: Application) -> None:
+    """Polling mode: chat menu button, shared services, reminder job."""
+    # Default keeps today's "Записатись" -> Altegio booking page; CHAT_MENU_BUTTON=arcade opens the games.
+    button = menu.chat_menu_button(CHAT_MENU_BUTTON, ARCADE_WEBAPP_URL, BOOKING_WIDGET_URL, CHAT_MENU_BOOKING_TEXT)
+    if button is not None:
+        await app.bot.set_chat_menu_button(menu_button=button)
+    prepare(app)
+    client = app.bot_data["altegio"]
     if client is not None:
         if app.job_queue is None:
             logger.error("No JobQueue: install python-telegram-bot[job-queue]; visit reminders are OFF")
@@ -191,8 +205,32 @@ async def handle_non_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await update.message.reply_text(texts.FALLBACK, reply_markup=MAIN_MENU_KEYBOARD)
 
 
+def add_handlers(app: Application, persistent: bool = False) -> Application:
+    # Booking first: its contact/text steps must win over the catch-all text handler below.
+    app.add_handler(booking.build_handler(persistent=persistent))
+    for h in reminders.handlers():
+        app.add_handler(h)
+    for h in menu.handlers():  # menu buttons, prices, contact sharing outside booking
+        app.add_handler(h)
+    app.add_handler(CallbackQueryHandler(booking.stale_button, pattern=r"^bk:"))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_photo))
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_non_photo)
+    )
+    return app
+
+
+def build_webhook_application(persistence) -> Application:
+    """One Application per webhook call (Vercel): state comes from `persistence`, no JobQueue
+    (reminders run from the Vercel cron, api/cron_reminders.py)."""
+    app = Application.builder().token(TELEGRAM_BOT_TOKEN).persistence(persistence).job_queue(None).build()
+    return add_handlers(app, persistent=True)
+
+
 def main() -> None:
-    """Start the bot."""
+    """Local / server polling mode. Production runs as a webhook: api/webhook.py."""
     if not TELEGRAM_BOT_TOKEN:
         raise ValueError("TELEGRAM_BOT_TOKEN is not set in .env file")
 
@@ -203,21 +241,7 @@ def main() -> None:
         .post_shutdown(post_shutdown)
         .build()
     )
-
-    # Booking first: its contact/text steps must win over the catch-all text handler below.
-    app.add_handler(booking.build_handler())
-    for h in reminders.handlers():
-        app.add_handler(h)
-    for h in menu.handlers():  # menu buttons, prices, contact sharing outside booking
-        app.add_handler(h)
-    app.add_handler(CallbackQueryHandler(booking.stale_button, pattern=r"^bk:"))
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_non_photo)
-    )
-
+    add_handlers(app)
     logger.info("Barber Style Bot is running...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 

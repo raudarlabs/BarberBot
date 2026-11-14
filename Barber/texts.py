@@ -108,10 +108,13 @@ MENU_PRICES = "💈 Послуги й ціни"
 MENU_CONTACTS = "📍 Контакти"
 LEGACY_STYLE = "Choose Hair Style"  # old keyboards still on clients' phones
 LEGACY_GAMES = "Play"
+LEGACY_STYLE_UK = "Підібрати зачіску"  # the April 2026 live bot's keyboard
+LEGACY_GAMES_UK = "Ігровуха"
 MENU_PLACEHOLDER = "Оберіть дію або надішліть голосове 🎙"
 # Menu buttons other than "📅 Записатися" (that one starts the booking itself).
 MENU_REGEX = "^(%s)$" % "|".join(re.escape(x) for x in (
-    MENU_VISITS, MENU_STYLE, MENU_GAMES, MENU_PRICES, MENU_CONTACTS, LEGACY_STYLE, LEGACY_GAMES))
+    MENU_VISITS, MENU_STYLE, MENU_GAMES, MENU_PRICES, MENU_CONTACTS, LEGACY_STYLE, LEGACY_GAMES,
+    LEGACY_STYLE_UK, LEGACY_GAMES_UK))
 
 WELCOME = (
     "Вітаємо в Custom True Barbershop! 💈\n\n"

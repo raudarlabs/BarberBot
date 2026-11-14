@@ -6,6 +6,21 @@ A Telegram bot for barbershops with two features:
 
 ---
 
+## Where things run
+
+- **Vercel project `barberbot`** (https://barber-psi-ochre.vercel.app) serves everything:
+  the games (`public/`), the arcade API (`api/*.py`) and the **live Telegram bot**
+  `@custom_true_bot`, whose webhook is `/api/webhook`. Deploying replaces all of it at once,
+  so never deploy a tree without `api/webhook.py`.
+- The bot code is `bot.py` + `booking.py`, `menu.py`, `reminders.py`, `voice.py`, `texts.py`.
+  `api/webhook.py` handles each Telegram update with a fresh Application; conversation state
+  lives in the database (`ptb_persistence.py`). Visit reminders run from Vercel Cron every
+  10 minutes (`api/cron_reminders.py`, `CRON_SECRET`). `python bot.py` still runs the same bot
+  in polling mode for local development (stop the webhook first or use a test bot).
+- Data: Neon Postgres `barber-games-db` (`DATABASE_URL`).
+- Booking needs `ALTEGIO_PARTNER_TOKEN` and `ALTEGIO_USER_TOKEN` in Vercel; while they are empty,
+  booking and reminders are switched off and the rest of the bot works.
+
 ## Architecture
 
 ```
@@ -89,6 +104,8 @@ Barber/
 | 💈 Послуги й ціни | barber → their services and prices from Altegio → "Записатися до …" |
 | 📍 Контакти | address, hours, phone, map and Instagram from `config.SHOP` (mirrors the website's `src/data/site.ts`) |
 
+The chat menu button (left of the message field) stays "Записатись" → the Altegio online-booking
+page, as on the live bot today; `CHAT_MENU_BUTTON=arcade` puts the games there instead.
 The arcade is only ever opened from inline buttons or the chat menu button (a reply-keyboard
 web_app launch gets no initData, which the leaderboard needs). Old keyboards' "Play" and
 "Choose Hair Style" buttons still work. Pressing a menu button in the middle of a booking ends
@@ -159,6 +176,9 @@ ALTEGIO_LOCATION_IDS=297851        # comma-separated, shown in this order
 # REMINDER_INTERVAL=600
 # ALTEGIO_MOCK=1                   # no tokens: run against fixtures/altegio.json
 # VOICE_BOOKING=0                  # turn voice booking off
+# CHAT_MENU_BUTTON=booking         # button left of the message field: booking (default) | arcade | none
+# BOOKING_WIDGET_URL=https://n308628.alteg.io/company/297851/personal/menu?o=
+# CHAT_MENU_BOOKING_TEXT=Записатись
 DATABASE_URL=postgres://...        # same Neon DB as the arcade, so phone links survive restarts
 ```
 

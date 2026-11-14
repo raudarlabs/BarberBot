@@ -684,7 +684,7 @@ async def stale_button(update, context):
     await update.callback_query.answer(T.SESSION_EXPIRED, show_alert=True)
 
 
-def build_handler() -> ConversationHandler:
+def build_handler(persistent: bool = False) -> ConversationHandler:
     voice = MessageHandler(filters.VOICE | filters.AUDIO, on_voice)
     nav = [
         CallbackQueryHandler(on_back, pattern=r"^bk:back:"),
@@ -722,6 +722,9 @@ def build_handler() -> ConversationHandler:
             MessageHandler(filters.Regex(T.MENU_REGEX), on_menu_exit),
         ],
         allow_reentry=True,
-        conversation_timeout=30 * 60,
+        # Polling: a JobQueue ends idle flows. Webhook (persistent, no JobQueue): steps are stored in the
+        # database and a stale flow is detected by its age (STALE_AFTER) instead.
+        conversation_timeout=None if persistent else 30 * 60,
         name="booking",
+        persistent=persistent,
     )

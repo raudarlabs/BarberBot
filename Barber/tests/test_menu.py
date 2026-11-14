@@ -42,6 +42,15 @@ class StaticTests(unittest.TestCase):
         self.assertEqual(urls[0], ARCADE)
         self.assertEqual(urls[1:], [ARCADE + "?game=" + g for g, _, _ in menu.GAMES])
 
+    def test_chat_menu_button(self):
+        booking_url = "https://n308628.alteg.io/company/297851/personal/menu?o="
+        b = menu.chat_menu_button("booking", ARCADE, booking_url, "Записатись")
+        self.assertEqual((b.text, b.web_app.url), ("Записатись", booking_url))
+        a = menu.chat_menu_button("arcade", ARCADE, booking_url, "Записатись")
+        self.assertEqual((a.text, a.web_app.url), (T.MENU_GAMES, ARCADE))
+        self.assertIsNone(menu.chat_menu_button("none", ARCADE, booking_url, "x"))
+        self.assertIsNone(menu.chat_menu_button("booking", ARCADE, "", "x"))
+
     def test_game_ids_match_arcade(self):
         games_dir = os.path.join(ROOT, "public", "arcade", "games")
         if os.path.isdir(games_dir):

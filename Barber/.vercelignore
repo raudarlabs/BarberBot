@@ -1,15 +1,10 @@
-# Only public/ and api/ belong on Vercel; the bot runs elsewhere.
-bot.py
-config.py
-openai_service.py
-altegio*.py
-booking.py
-linkstore.py
-reminders.py
-texts.py
+# Vercel runs public/ (games), api/ (arcade API, bot webhook, cron) and the bot modules they import.
+# Local-only things stay out:
 dev_server.py
 requirements.txt
 fixtures/
+altegio_fixture.py
 tests/
+scripts/
 README.md
 .env*

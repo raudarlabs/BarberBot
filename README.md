@@ -10,11 +10,16 @@ A Telegram bot for barbershops with two features:
 
 - **Vercel project `barberbot`** (https://barber-psi-ochre.vercel.app) serves everything:
   the games (`public/`), the arcade API (`api/*.py`) and the **live Telegram bot**
-  `@custom_true_bot` — its webhook is `/api/webhook` (`api/webhook.py` + `api/_legacy_*.py`).
-  Deploying replaces all three at once, so never deploy a tree without `api/webhook.py`.
-- `bot.py` (Altegio booking, voice booking, reminders, new menu) is the next version of the bot;
-  it runs in polling mode and is **not deployed yet** — it will move into the webhook.
+  `@custom_true_bot`, whose webhook is `/api/webhook`. Deploying replaces all of it at once,
+  so never deploy a tree without `api/webhook.py`.
+- The bot code is `bot.py` + `booking.py`, `menu.py`, `reminders.py`, `voice.py`, `texts.py`.
+  `api/webhook.py` handles each Telegram update with a fresh Application; conversation state
+  lives in the database (`ptb_persistence.py`). Visit reminders run from Vercel Cron every
+  10 minutes (`api/cron_reminders.py`, `CRON_SECRET`). `python bot.py` still runs the same bot
+  in polling mode for local development (stop the webhook first or use a test bot).
 - Data: Neon Postgres `barber-games-db` (`DATABASE_URL`).
+- Booking needs `ALTEGIO_PARTNER_TOKEN` and `ALTEGIO_USER_TOKEN` in Vercel; while they are empty,
+  booking and reminders are switched off and the rest of the bot works.
 
 ## Architecture
 
