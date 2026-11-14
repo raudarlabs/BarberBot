@@ -1,11 +1,17 @@
+import asyncio
 import io
+import json
 import logging
+import os
+import sys
+import time
 from telegram import Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
     CommandHandler,
     MessageHandler,
+    TypeHandler,
     filters,
     ContextTypes,
 )
@@ -34,6 +40,9 @@ import texts
 from altegio import make_client
 from linkstore import LinkStore
 from voice import make_assistant
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "api"))
+import _kv  # noqa: E402
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -205,7 +214,23 @@ async def handle_non_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await update.message.reply_text(texts.FALLBACK, reply_markup=MAIN_MENU_KEYBOARD)
 
 
+CHATS = "bb:chats"  # every private chat that wrote to the bot: id -> {name, username, last}
+
+
+async def record_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Remember who uses the bot (Telegram gives bots no subscriber list), for future announcements."""
+    chat, user = update.effective_chat, update.effective_user
+    if chat is None or chat.type != "private" or user is None:
+        return
+    entry = {"name": user.full_name, "username": user.username or "", "last": int(time.time())}
+    try:
+        await asyncio.to_thread(_kv.pipeline, ["HSET", CHATS, str(chat.id), json.dumps(entry, ensure_ascii=False)])
+    except Exception as e:  # noqa: BLE001 - never block the update because of bookkeeping
+        logger.warning("record_chat failed: %s", e)
+
+
 def add_handlers(app: Application, persistent: bool = False) -> Application:
+    app.add_handler(TypeHandler(Update, record_chat), group=-1)  # runs before, never stops, the handlers below
     # Booking first: its contact/text steps must win over the catch-all text handler below.
     app.add_handler(booking.build_handler(persistent=persistent))
     for h in reminders.handlers():

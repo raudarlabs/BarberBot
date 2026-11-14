@@ -117,6 +117,9 @@ class WebhookFlow(unittest.TestCase):
     def test_booking_survives_a_fresh_process_per_update(self):
         calls = run(text_update("/start"))
         self.assertIn("Custom True", texts(calls)[0])
+        chats = _kv.pipeline(["HGETALL", "bb:chats"])[0]
+        self.assertEqual(chats[0], "42")
+        self.assertEqual(json.loads(chats[1])["username"], "taras")
 
         calls = run(text_update(T.BOOK_BUTTON))
         step = 0
@@ -138,7 +141,10 @@ class WebhookFlow(unittest.TestCase):
 
     def test_legacy_keyboard_labels_and_games_button(self):
         calls = run(text_update(T.LEGACY_GAMES_UK))
-        markup = [p.get("reply_markup") for api, p in calls if p.get("reply_markup")][-1]
+        markups = [p.get("reply_markup") for api, p in calls if p.get("reply_markup")]
+        self.assertIn("keyboard", markups[-1])  # the old bottom keyboard gets replaced
+        self.assertIn(T.MENU_UPDATED, texts(calls))
+        markup = [m for m in markups if "inline_keyboard" in m][-1]
         webapps = [b for row in markup["inline_keyboard"] for b in row if "web_app" in b]
         self.assertTrue(webapps, markup)
         self.assertTrue(webapps[0]["web_app"]["url"].startswith("https://"))  # config may be loaded by another suite

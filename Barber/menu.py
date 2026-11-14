@@ -288,9 +288,14 @@ ROUTES = {
 
 async def dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Route a menu button's text to its screen (also used when a button interrupts booking)."""
-    fn = ROUTES.get((update.message.text or "").strip()) if update.message else None
+    label = (update.message.text or "").strip() if update.message else ""
+    fn = ROUTES.get(label)
     if fn is not None:
         await fn(update, context)
+        if label in (T.LEGACY_GAMES, T.LEGACY_GAMES_UK):
+            # An old keyboard is still on this phone: the games reply carries only inline buttons,
+            # so send the new bottom menu to replace it.
+            await _reply(update, T.MENU_UPDATED, _menu(context))
 
 
 def handlers():

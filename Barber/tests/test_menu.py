@@ -75,7 +75,12 @@ class MenuScreenTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_dispatch_routes_legacy_buttons(self):
         await menu.dispatch(self.text_update("Play"), self.ctx)
-        self.assertEqual(self.chat.sent[-1][0], T.GAMES_TEXT)
+        self.assertEqual(self.chat.sent[-2][0], T.GAMES_TEXT)
+        self.assertEqual(self.chat.sent[-1][0], T.MENU_UPDATED)  # replaces the old keyboard
+        await menu.dispatch(self.text_update(T.LEGACY_GAMES_UK), self.ctx)
+        self.assertEqual(self.chat.sent[-1][0], T.MENU_UPDATED)
+        await menu.dispatch(self.text_update(T.MENU_GAMES), self.ctx)
+        self.assertEqual(self.chat.sent[-1][0], T.GAMES_TEXT)  # the new button: no extra message
         await menu.dispatch(self.text_update("Choose Hair Style"), self.ctx)
         self.assertEqual(self.chat.sent[-1][0], T.STYLE_PROMPT)
 
