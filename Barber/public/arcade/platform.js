@@ -84,4 +84,5 @@ export const api = {
   history: (game, month) =>
     call(`/api/leaderboard?game=${encodeURIComponent(game)}&month=${encodeURIComponent(month)}`),
   summary: () => call('/api/summary'),
+  sendIdea: (title, text) => call('/api/idea', { method: 'POST', body: { title, text } }),
 };

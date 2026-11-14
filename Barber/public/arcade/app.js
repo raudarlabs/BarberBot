@@ -33,13 +33,15 @@ sfx.enabled = store.get('sound', 'on') === 'on';
 
 let current = 'hub';
 function show(name) {
-  for (const s of ['hub', 'play', 'board']) $(s).classList.toggle('hidden', s !== name);
+  for (const s of ['hub', 'play', 'board', 'idea']) $(s).classList.toggle('hidden', s !== name);
   current = name;
   setBackButton(name !== 'hub');
 }
 
 function goBack() {
-  if (current === 'board') {
+  if (current === 'idea') {
+    openHub();
+  } else if (current === 'board') {
     if (run.boardFrom === 'play') show('play');
     else openHub();
   } else if (current === 'play') {
@@ -434,6 +436,43 @@ function openBoard(id, from) {
   loadBoard();
 }
 
+// ------------------------------------------------------------------ game ideas
+
+function openIdea() {
+  leaveLoop();
+  $('ideaForm').classList.remove('hidden');
+  $('ideaDone').classList.add('hidden');
+  $('ideaStatus').textContent = '';
+  $('ideaStatus').className = 'status';
+  $('ideaSend').disabled = false;
+  $('ideaSend').textContent = t('ideaSend');
+  show('idea');
+}
+
+async function sendIdea(e) {
+  e.preventDefault();
+  const text = $('ideaText').value.trim();
+  const title = $('ideaName').value.trim();
+  const status = $('ideaStatus');
+  status.className = 'status';
+  if (text.length < 10) { status.textContent = t('ideaShort'); haptic('warning'); return; }
+  $('ideaSend').disabled = true;
+  $('ideaSend').textContent = t('ideaSending');
+  try {
+    await api.sendIdea(title, text);
+    haptic('success');
+    $('ideaText').value = ''; $('ideaName').value = ''; $('ideaCount').textContent = '0 / 1500';
+    $('ideaForm').classList.add('hidden');
+    $('ideaDone').classList.remove('hidden');
+  } catch (err) {
+    haptic('error');
+    status.textContent = err.status === 401 ? t('ideaGuest') : err.status === 429 ? t('ideaLimit')
+      : err.message === 'too_short' ? t('ideaShort') : t('ideaFail');
+    $('ideaSend').disabled = false;
+    $('ideaSend').textContent = t('ideaSend');
+  }
+}
+
 // ------------------------------------------------------------------ wiring
 
 function bind() {
@@ -445,6 +484,11 @@ function bind() {
     openGame(card.dataset.game);
   });
   $('bookBtn').addEventListener('click', () => openLink(BOOKING_URL));
+  $('ideaBtn').addEventListener('click', () => { haptic('light'); openIdea(); });
+  $('ideaBack').addEventListener('click', openHub);
+  $('ideaDoneBtn').addEventListener('click', openHub);
+  $('ideaForm').addEventListener('submit', sendIdea);
+  $('ideaText').addEventListener('input', () => { $('ideaCount').textContent = `${$('ideaText').value.length} / 1500`; });
   $('overBook').addEventListener('click', () => openLink(BOOKING_URL));
   $('langBtn').addEventListener('click', () => {
     setLang(getLang() === 'uk' ? 'en' : 'uk');

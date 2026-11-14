@@ -24,6 +24,7 @@ os.environ["TELEGRAM_BOT_TOKEN"] = "123456:TEST-TOKEN"
 
 import _kv  # noqa: E402
 import _games  # noqa: E402
+import idea  # noqa: E402
 import leaderboard  # noqa: E402
 import prize  # noqa: E402
 import score  # noqa: E402
@@ -270,6 +271,55 @@ class MonthlyHistoryAndPrizeTests(unittest.TestCase):
         self.assertEqual(req("GET", "/?code=" + code, h={"X-Admin-Key": "wrong"})[0], 403)
         with mock.patch.dict(os.environ, {"ARCADE_ADMIN_KEY": ""}):
             self.assertEqual(req("GET", "/?code=" + code)[0], 503)
+
+
+class IdeaTests(unittest.TestCase):
+    def setUp(self):
+        _kv._memory = None
+        os.environ["ARCADE_DEV"] = "1"
+        os.environ["ARCADE_ADMIN_KEY"] = "staff-key"
+
+    def post(self, user, body):
+        return call(idea.handle, "POST", body=body, init_data=sign(user))
+
+    def test_idea_is_stored_listed_and_emailed(self):
+        sent = []
+        with mock.patch.dict(os.environ, {"RESEND_API_KEY": "re_test", "IDEAS_EMAIL": ""}), \
+                mock.patch.object(idea, "_post_json", lambda url, payload, headers: sent.append((url, payload, headers)) or 200):
+            status, data = self.post(OLENA, {"title": "Гоночні крісла", "text": "Перегони на барберських кріслах по салону"})
+        self.assertEqual((status, data), (200, {"ok": True}))
+        url, payload, headers = sent[0]
+        self.assertEqual(url, "https://api.resend.com/emails")
+        self.assertEqual(payload["to"], ["raudar.aborsen@gmail.com"])
+        self.assertIn("Гоночні крісла", payload["text"])
+        self.assertIn("@olena", payload["text"])
+        self.assertEqual(headers["Authorization"], "Bearer re_test")
+
+        status, listing = dispatch(idea.handle, Request("GET", "/", {"X-Admin-Key": "staff-key"}.items()))
+        self.assertEqual(status, 200)
+        self.assertEqual([(i["name"], i["title"], i.get("sent")) for i in listing["ideas"]],
+                         [("Olena K.", "Гоночні крісла", ["email"])])
+        self.assertEqual(dispatch(idea.handle, Request("GET", "/", {"X-Admin-Key": "nope"}.items()))[0], 403)
+
+    def test_idea_kept_when_delivery_fails_or_is_off(self):
+        def boom(*a):
+            raise OSError("smtp down")
+        with mock.patch.dict(os.environ, {"RESEND_API_KEY": "re_test", "IDEAS_TELEGRAM_CHAT_ID": "42"}), \
+                mock.patch.object(idea, "_post_json", boom):
+            self.assertEqual(self.post(TARAS, {"text": "Гра про стрижку собак на швидкість"})[0], 200)
+        self.assertEqual(self.post(TARAS, {"text": "Ще одна ідея без жодних каналів"})[0], 200)  # nothing configured
+        _, listing = dispatch(idea.handle, Request("GET", "/", {"X-Admin-Key": "staff-key"}.items()))
+        self.assertEqual(len(listing["ideas"]), 2)
+        self.assertTrue(all("sent" not in i for i in listing["ideas"]))
+
+    def test_validation_auth_and_daily_limit(self):
+        self.assertEqual(self.post(OLENA, {"text": "коротко"})[1]["error"], "too_short")
+        self.assertEqual(self.post(OLENA, {"text": "x" * 1501})[1]["error"], "too_long")
+        with mock.patch.dict(os.environ, {"ARCADE_DEV": "0"}):
+            self.assertEqual(call(idea.handle, "POST", body={"text": "Анонімна ідея без Telegram"})[0], 401)
+        for _ in range(5):
+            self.assertEqual(self.post(OLENA, {"text": "Ідея номер якась, достатньо довга"})[0], 200)
+        self.assertEqual(self.post(OLENA, {"text": "Шоста ідея за день — забагато"})[0], 429)
 
 
 if __name__ == "__main__":

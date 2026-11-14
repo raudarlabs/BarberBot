@@ -89,7 +89,7 @@ class DryerGame {
     const minY = 70 * this.u + gap / 2, maxY = this.floor - 50 * this.u - gap / 2;
     const gy = clamp(last + rand(-170, 170) * this.u, minY, maxY);
     this.poles.push({ x, gy, gap, passed: false, off: rand(0, 100) });
-    if (Math.random() < 0.3) this.combs.push({ x: x + (POLE_W * this.u) / 2, y: gy, got: false });
+    if (Math.random() < 0.3) this.combs.push({ x: x + (POLE_W * this.u) / 2, y: gy, got: false, phase: rand(0, Math.PI * 2) });
   }
 
   flap() {
@@ -238,7 +238,8 @@ class DryerGame {
     for (const c of this.combs) {
       if (c.got) continue;
       ctx.shadowColor = COLORS.gold; ctx.shadowBlur = 14;
-      drawComb(ctx, c.x, c.y + Math.sin(this.time * 4 + c.x) * 4 * this.u, 30 * this.u, COLORS.goldHi);
+      // gentle bob with a fixed per-comb phase (using c.x here made it jitter as the comb scrolls)
+      drawComb(ctx, c.x, c.y + Math.sin(this.time * 3 + c.phase) * 4 * this.u, 30 * this.u, COLORS.goldHi);
       ctx.shadowBlur = 0;
     }
 

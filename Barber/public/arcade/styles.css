@@ -231,3 +231,27 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .game-switch { display: flex; gap: 8px; justify-content: center; margin-bottom: 12px; }
 .game-switch button { width: 46px; height: 46px; border-radius: 13px; font-size: 22px; border: 1px solid var(--line); background: var(--bg-2); opacity: 0.55; }
 .game-switch button.active { opacity: 1; border-color: var(--accent); background: var(--card-hi); }
+
+/* ---------- game idea ---------- */
+.idea-cta {
+  display: flex; align-items: center; gap: 16px; text-align: left; width: 100%; max-width: 560px; margin: 14px auto 0;
+  padding: 14px 16px 14px 18px; border-radius: 20px; border: 1px dashed rgba(228, 184, 178, 0.45);
+  background: rgba(29, 20, 22, 0.55); color: var(--cream);
+}
+.idea-cta:active { transform: scale(0.98); }
+.idea-tile { width: 52px; height: 52px; font-size: 26px; background: linear-gradient(145deg, var(--wine-hi), var(--wine)); }
+#idea { padding: 0 16px; overflow-y: auto; }
+.idea-form { display: flex; flex-direction: column; gap: 8px; max-width: 560px; width: 100%; margin: 0 auto; padding-bottom: 24px; }
+.idea-lead { color: var(--muted); font-size: 14px; line-height: 1.45; margin-bottom: 6px; }
+.idea-form label { font-size: 13px; color: var(--accent); font-weight: 700; margin-top: 6px; }
+.idea-form input, .idea-form textarea {
+  width: 100%; font: inherit; font-size: 16px; color: var(--cream); background: var(--card);
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; resize: vertical;
+  user-select: text; -webkit-user-select: text;
+}
+.idea-form input:focus, .idea-form textarea:focus { outline: none; border-color: var(--accent); }
+.idea-count { text-align: right; font-size: 12px; color: var(--muted); }
+.idea-done { text-align: center; max-width: 420px; margin: 40px auto 0; display: flex; flex-direction: column; gap: 12px; }
+.idea-done-icon { font-size: 54px; }
+.idea-done h2 { color: var(--accent); font-family: "Cinzel", Georgia, serif; }
+.idea-done p { color: var(--muted); line-height: 1.45; }

@@ -25,6 +25,14 @@
     <div id="wins" class="wins"></div>
     <button id="prizeBanner" class="prize" type="button"></button>
     <div id="cards" class="cards"></div>
+    <button id="ideaBtn" class="idea-cta" type="button">
+      <span class="tile idea-tile">💡</span>
+      <span class="card-body">
+        <span class="card-title" data-i18n="ideaCta"></span>
+        <span class="card-desc" data-i18n="ideaCtaDesc"></span>
+      </span>
+      <span class="chev">›</span>
+    </button>
     <p class="note" data-i18n="resetsMonthly"></p>
     <button id="bookBtn" class="btn btn-gold book" data-i18n="book"></button>
     <div class="hub-tools">
@@ -86,6 +94,31 @@
     </div>
 
     <div class="controls" id="controls"></div>
+  </section>
+
+  <!-- ============ GAME IDEA ============ -->
+  <section id="idea" class="screen hidden">
+    <div class="board-head">
+      <button class="icon-btn" id="ideaBack" type="button" aria-label="Back">‹</button>
+      <h2 data-i18n="ideaTitle"></h2>
+      <span class="spacer"></span>
+    </div>
+    <form id="ideaForm" class="idea-form" novalidate>
+      <p class="idea-lead" data-i18n="ideaLead"></p>
+      <label for="ideaName" data-i18n="ideaNameLabel"></label>
+      <input id="ideaName" maxlength="80" autocomplete="off">
+      <label for="ideaText" data-i18n="ideaTextLabel"></label>
+      <textarea id="ideaText" rows="6" maxlength="1500"></textarea>
+      <div class="idea-count" id="ideaCount">0 / 1500</div>
+      <div class="status" id="ideaStatus"></div>
+      <button class="btn btn-gold" id="ideaSend" type="submit" data-i18n="ideaSend"></button>
+    </form>
+    <div class="idea-done hidden" id="ideaDone">
+      <div class="idea-done-icon">💈</div>
+      <h2 data-i18n="ideaThanks"></h2>
+      <p data-i18n="ideaThanksText"></p>
+      <button class="btn btn-ghost" id="ideaDoneBtn" type="button" data-i18n="toHub"></button>
+    </div>
   </section>
 
   <!-- ============ LEADERBOARD ============ -->
