@@ -50,6 +50,7 @@ def panel() -> InlineKeyboardMarkup:
          InlineKeyboardButton("🕳 Завтра", callback_data="adm:free:1")],
         [InlineKeyboardButton("📊 Статистика", callback_data="adm:stats"),
          InlineKeyboardButton("☀️ Дайджест", callback_data="adm:digest")],
+        [InlineKeyboardButton("👥 Команда", callback_data="adm:team")],
     ])
 
 
@@ -80,10 +81,12 @@ async def day_appointments(client, loc, day: date):
     return sorted((a for a in appts if a.status != "cancelled" and a.start.date() == day), key=lambda a: a.start)
 
 
-async def appointments_text(client, locations: Dict[int, str], day: date) -> str:
+async def appointments_text(client, locations: Dict[int, str], day: date, staff_id: Optional[int] = None) -> str:
     lines, total, via_bot = [], 0, 0
     for loc, address in locations.items():
         appts = await day_appointments(client, loc, day)
+        if staff_id is not None:
+            appts = [a for a in appts if a.staff_id == staff_id]
         names = await _staff_names(client, loc) if any(not a.staff_name for a in appts) else {}
         by_staff: Dict[str, list] = {}
         for a in appts:
@@ -149,13 +152,16 @@ async def free_windows(client, loc, day: date, staff=None, now=None):
     return out
 
 
-async def free_windows_text(client, locations: Dict[int, str], day: date) -> str:
+async def free_windows_text(client, locations: Dict[int, str], day: date, staff_id: Optional[int] = None) -> str:
     now = datetime.now(client.tz)
     lines = ["🕳 Вільні вікна — %s" % _day_title(day)]
     for loc, address in locations.items():
         if len(locations) > 1:
             lines.append("\n📍 " + address)
-        for name, ranges in await free_windows(client, loc, day, now=now):
+        staff = await client.list_staff(loc)
+        if staff_id is not None:
+            staff = [s for s in staff if s.id == staff_id]
+        for name, ranges in await free_windows(client, loc, day, staff=staff, now=now):
             if ranges is None:
                 lines.append("💈 %s: вихідний" % name)
             else:

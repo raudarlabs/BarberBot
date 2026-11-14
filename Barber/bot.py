@@ -37,6 +37,7 @@ import admin
 import booking
 import menu
 import reminders
+import team
 import texts
 from altegio import make_client
 from linkstore import LinkStore
@@ -232,6 +233,8 @@ async def record_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 def add_handlers(app: Application, persistent: bool = False) -> Application:
     app.add_handler(TypeHandler(Update, record_chat), group=-1)  # runs before, never stops, the handlers below
+    for h in team.handlers():  # /start team_<token> must win over the plain /start below; /me
+        app.add_handler(h)
     # Booking first: its contact/text steps must win over the catch-all text handler below.
     app.add_handler(booking.build_handler(persistent=persistent))
     for h in reminders.handlers():

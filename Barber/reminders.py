@@ -283,6 +283,13 @@ async def on_cancel_visit(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     logger.info("visit %s/%s cancelled by chat %s", loc, appt_id, update.effective_chat.id)
     await admin_notify.count_event("cancelled")
     try:
+        import team  # late import: team -> admin -> ... keeps module loading simple
+        await team.notify_staff(getattr(context, "bot", None), appt.staff_id, "cancelled", appt.id, appt.start,
+                                appt.service_titles, appt.client_name or admin_notify.user_name(update.effective_user),
+                                appt.client_phone)
+    except Exception:
+        logger.exception("cancel %s/%s: barber notification failed", loc, appt_id)
+    try:
         user = update.effective_user
         if not admin_notify.admin_chat_ids():
             raise StopIteration  # no admins configured: skip the extra Altegio lookup

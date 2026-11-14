@@ -42,6 +42,7 @@ from telegram.ext import (
 )
 
 import admin_notify
+import team
 import texts as T
 import voice as V
 from altegio import AltegioError, normalize_phone
@@ -595,6 +596,17 @@ async def on_confirm(update, context):
     except Exception:
         pass
     await admin_notify.count_event("moved" if bk.get("reschedule") else "booked")
+    try:  # the barber, if he is linked to the bot (team.py)
+        if bk.get("reschedule"):
+            old = bk["appt"]
+            await team.notify_staff(getattr(context, "bot", None), bk["staff_id"], "moved", appt.id, start,
+                                    old.service_titles, old.client_name, old.client_phone, old_start=old.start)
+        else:
+            await team.notify_staff(getattr(context, "bot", None), bk["staff_id"], "booked", appt.id, start,
+                                    svc.title, bk.get("name") or admin_notify.user_name(update.effective_user),
+                                    bk.get("phone", ""))
+    except Exception:
+        logger.exception("booking %s: barber notification failed", appt.id)
     try:
         user = update.effective_user
         who = (bk.get("name") or admin_notify.user_name(user), bk.get("phone") or appt.client_phone,

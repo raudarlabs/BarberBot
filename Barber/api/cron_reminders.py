@@ -24,27 +24,38 @@ from telegram.ext import Application  # noqa: E402
 
 import bot  # noqa: E402
 import reminders  # noqa: E402
+import team  # noqa: E402
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger("cron_reminders")
 
 
 async def run_once() -> dict:
-    if os.environ.get("REMINDERS_ENABLED") != "1":
-        return {"ok": True, "sent": 0, "skipped": "disabled (set REMINDERS_ENABLED=1)"}
+    """Visit reminders (when REMINDERS_ENABLED=1) and the team's change notifications (team.sync_changes)."""
+    reminders_on = os.environ.get("REMINDERS_ENABLED") == "1"
     app = Application.builder().token(bot.TELEGRAM_BOT_TOKEN).job_queue(None).build()
+    out = {"ok": True}
     async with app:
         bot.prepare(app)
         client = app.bot_data.get("altegio")
         if client is None:
             return {"ok": True, "sent": 0, "skipped": "altegio_not_configured"}
+        locations = app.bot_data.get("locations") or {}
         try:
-            sent = await reminders.run_reminders(
-                client, app.bot_data["links"], app.bot_data.get("locations") or {}, app.bot.send_message)
+            if reminders_on:
+                out["sent"] = await reminders.run_reminders(client, app.bot_data["links"], locations,
+                                                            app.bot.send_message)
+            else:
+                out["reminders"] = "disabled (set REMINDERS_ENABLED=1)"
+            try:
+                out["team_notified"] = await team.sync_changes(client, locations, app.bot)
+            except Exception:
+                logger.exception("team sync failed")
+                out["team_notified"] = "error"
         finally:
             await client.aclose()
-    logger.info("reminders sent: %d", sent)
-    return {"ok": True, "sent": sent}
+    logger.info("cron: %s", out)
+    return out
 
 
 class handler(BaseHTTPRequestHandler):
