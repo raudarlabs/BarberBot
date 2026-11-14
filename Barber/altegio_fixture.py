@@ -88,12 +88,15 @@ class FixtureBackend:
             ("GET", r"/locations/(\d+)/appointments/(\d+)", self._get_appointment),
             ("PUT", r"/locations/(\d+)/appointments/(\d+)", self._update),
             ("POST", r"/locations/(\d+)/appointments/(\d+)/attendance", self._attendance),
+            ("DELETE", r"/locations/(\d+)/appointments/(\d+)", self._delete),
             ("GET", r"/client/(\d+)/(\d+)", self._client),
         ]
         for method, pattern, fn in routes:
             m = re.fullmatch(pattern, path)
             if m and method == request.method:
                 status, payload = fn(params, body, *m.groups())
+                if payload is None:
+                    return httpx.Response(status)
                 return httpx.Response(status, json=payload)
         return httpx.Response(404, json={"success": False, "meta": {"message": "not found"}})
 
@@ -245,6 +248,13 @@ class FixtureBackend:
                  comment=body.get("comment", ""), api_id=body.get("api_id", ""),
                  attendance=body.get("attendance", 0))
         return self._ok({k: v for k, v in a.items() if k != "_loc"})
+
+    def _delete(self, params, body, loc, appt_id):
+        a = self.appointments.get(int(appt_id))
+        if not a or a["_loc"] != int(loc) or a["deleted"]:
+            return 404, {"success": False, "meta": {"message": "not found"}}
+        a["deleted"] = True
+        return 204, None
 
     def _attendance(self, params, body, loc, appt_id):
         a = self.appointments.get(int(appt_id))

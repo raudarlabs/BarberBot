@@ -75,7 +75,8 @@ class RunRemindersTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Ігор Халай", text)
         self.assertIn("Чоловіча стрижка", text)
         self.assertEqual(buttons(markup), [(T.REMINDER_CONFIRM, "rm:ok:%d:%d" % (LOC, appt_id)),
-                                           (T.REMINDER_MOVE, "rm:mv:%d:%d" % (LOC, appt_id))])
+                                           (T.REMINDER_MOVE, "rm:mv:%d:%d" % (LOC, appt_id)),
+                                           (T.REMINDER_CANCEL, "rm:cx:%d:%d" % (LOC, appt_id))])
 
         self.assertEqual(await self.run_at(NOW + timedelta(minutes=10)), 0)  # deduped
         self.assertEqual(await self.run_at(start - timedelta(minutes=110)), 1)
@@ -117,7 +118,8 @@ class RunRemindersTests(unittest.IsolatedAsyncioTestCase):
         self.backend.add_appointment(LOC, IGOR, NOW + timedelta(hours=1, minutes=30), phone="+380671234567", deleted=True)
         await self.links.link(555, "380671234567")
         self.assertEqual(await self.run_at(NOW), 1)
-        self.assertEqual(buttons(self.out.messages[-1][2]), [(T.REMINDER_MOVE, "rm:mv:%d:%d" % (LOC, a))])
+        self.assertEqual(buttons(self.out.messages[-1][2]), [(T.REMINDER_MOVE, "rm:mv:%d:%d" % (LOC, a)),
+                                                             (T.REMINDER_CANCEL, "rm:cx:%d:%d" % (LOC, a))])
 
     async def test_moved_visit_is_reminded_again(self):
         start = NOW + timedelta(hours=1)
@@ -155,13 +157,82 @@ class ConfirmButtonTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.client.backend.appointments[self.appt_id]["attendance"], 2)
         text, markup = q.edits[-1]
         self.assertTrue(text.endswith(T.CONFIRMED))
-        self.assertEqual([b[0] for b in buttons(markup)], [T.REMINDER_MOVE])
+        self.assertEqual([b[0] for b in buttons(markup)], [T.REMINDER_MOVE, T.REMINDER_CANCEL])
 
     async def test_other_chat_cannot_confirm(self):
         q = FakeQuery("rm:ok:%d:%d" % (LOC, self.appt_id))
         await reminders.on_confirm_visit(FakeUpdate(FakeChat(666), 666, query=q), self.ctx)
         self.assertEqual(self.client.backend.appointments[self.appt_id]["attendance"], 0)
         self.assertEqual(q.answers, [T.NOT_YOURS])
+
+
+class CancelButtonTests(unittest.IsolatedAsyncioTestCase):
+    """✖️ Скасувати in "Мій запис" / reminders: ask first, own visits only, not too close to the visit."""
+
+    async def asyncSetUp(self):
+        self.client = fixture_client()
+        self.links = LinkStore(memory=True)
+        self.ctx = FakeContext({"altegio": self.client, "links": self.links, "locations": LOCATIONS,
+                                "shop": {"phone_display": "+380 98 033 77 33"}})
+        self.start = (datetime.now(self.client.tz) + timedelta(days=1)).replace(minute=0, second=0, microsecond=0)
+        self.appt_id = self.client.backend.add_appointment(LOC, IGOR, self.start, phone="+380671234567")
+        await self.links.remember_appointment(LOC, self.appt_id, 555)
+
+    async def asyncTearDown(self):
+        await self.client.aclose()
+
+    async def press(self, action, chat=555, appt_id=None, text="💈 Ігор · завтра 12:00"):
+        q = FakeQuery("rm:%s:%d:%d" % (action, LOC, appt_id or self.appt_id), message_text=text)
+        await reminders.on_cancel_visit(FakeUpdate(FakeChat(chat), chat, query=q), self.ctx)
+        return q
+
+    def deleted(self, appt_id=None):
+        return self.client.backend.appointments[appt_id or self.appt_id]["deleted"]
+
+    async def test_visit_buttons_have_cancel(self):
+        appt = await self.client.get_appointment(LOC, self.appt_id)
+        self.assertIn((T.REMINDER_CANCEL, "rm:cx:%d:%d" % (LOC, self.appt_id)), buttons(reminders.move_confirm_buttons(appt)))
+
+    async def test_ask_then_cancel(self):
+        q = await self.press("cx")
+        text, markup = q.edits[-1]
+        self.assertTrue(text.endswith(T.CANCEL_ASK))
+        self.assertEqual([b[1] for b in buttons(markup)],
+                         ["rm:cxy:%d:%d" % (LOC, self.appt_id), "rm:cxn:%d:%d" % (LOC, self.appt_id)])
+        self.assertFalse(self.deleted())  # asking does not cancel
+        q = await self.press("cxy", text=text)
+        self.assertTrue(self.deleted())
+        text, markup = q.edits[-1]
+        self.assertTrue(text.endswith(T.CANCELLED))
+        self.assertNotIn(T.CANCEL_ASK, text)
+        self.assertIsNone(markup)
+        self.assertEqual(self.client.backend.requests[-1][0], "DELETE")
+
+    async def test_no_keeps_visit_and_restores_buttons(self):
+        q = await self.press("cx")
+        q = await self.press("cxn", text=q.edits[-1][0])
+        self.assertFalse(self.deleted())
+        text, markup = q.edits[-1]
+        self.assertNotIn(T.CANCEL_ASK, text)
+        self.assertIn("rm:cx:%d:%d" % (LOC, self.appt_id), [b[1] for b in buttons(markup)])
+
+    async def test_other_chat_cannot_cancel(self):
+        q = await self.press("cxy", chat=666)
+        self.assertFalse(self.deleted())
+        self.assertEqual(q.answers, [T.NOT_YOURS])
+
+    async def test_too_close_to_the_visit_asks_to_call(self):
+        soon = datetime.now(self.client.tz) + timedelta(minutes=90)
+        appt_id = self.client.backend.add_appointment(LOC, IGOR, soon, phone="+380671234567")
+        await self.links.remember_appointment(LOC, appt_id, 555)
+        q = await self.press("cxy", appt_id=appt_id)
+        self.assertFalse(self.deleted(appt_id))
+        self.assertIn("+380 98 033 77 33", q.answers[-1])
+
+    async def test_already_cancelled_visit(self):
+        self.client.backend.appointments[self.appt_id]["deleted"] = True
+        q = await self.press("cxy")
+        self.assertEqual(q.answers[-1], T.CANT_CHANGE)
 
 
 if __name__ == "__main__":

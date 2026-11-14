@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import datetime, timedelta
 from typing import Awaitable, Callable, Dict, Optional
 
@@ -59,13 +60,17 @@ def reminder_message(appt: Appointment, kind: str, now: datetime, staff_name: st
     return text, move_confirm_buttons(appt)
 
 
-def move_confirm_buttons(appt: Appointment) -> InlineKeyboardMarkup:
-    """"✅ Буду" (only while unconfirmed) and "🔁 Перенести" for one visit."""
+def visit_buttons(loc: int, appt_id: int, waiting: bool = True) -> InlineKeyboardMarkup:
+    """"✅ Буду" (only while unconfirmed), "🔁 Перенести" and "✖️ Скасувати" for one visit."""
     row = []
-    if appt.status == "waiting":
-        row.append(InlineKeyboardButton(T.REMINDER_CONFIRM, callback_data="rm:ok:%d:%d" % (appt.location_id, appt.id)))
-    row.append(InlineKeyboardButton(T.REMINDER_MOVE, callback_data="rm:mv:%d:%d" % (appt.location_id, appt.id)))
-    return InlineKeyboardMarkup([row])
+    if waiting:
+        row.append(InlineKeyboardButton(T.REMINDER_CONFIRM, callback_data="rm:ok:%d:%d" % (loc, appt_id)))
+    row.append(InlineKeyboardButton(T.REMINDER_MOVE, callback_data="rm:mv:%d:%d" % (loc, appt_id)))
+    return InlineKeyboardMarkup([row, [InlineKeyboardButton(T.REMINDER_CANCEL, callback_data="rm:cx:%d:%d" % (loc, appt_id))]])
+
+
+def move_confirm_buttons(appt: Appointment) -> InlineKeyboardMarkup:
+    return visit_buttons(appt.location_id, appt.id, waiting=appt.status == "waiting")
 
 
 async def find_chat(appt: Appointment, client, links) -> Optional[int]:
@@ -194,7 +199,7 @@ async def on_confirm_visit(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await q.answer(T.CANT_CHANGE, show_alert=True)
         return
     await q.answer(T.CONFIRMED)
-    move = InlineKeyboardMarkup([[InlineKeyboardButton(T.REMINDER_MOVE, callback_data="rm:mv:%d:%d" % (loc, appt_id))]])
+    move = visit_buttons(loc, appt_id, waiting=False)  # 🔁 Перенести · ✖️ Скасувати
     try:
         await q.edit_message_text((q.message.text or "") + "\n\n" + T.CONFIRMED, reply_markup=move)
     except BadRequest:
@@ -208,8 +213,82 @@ async def unlink_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.effective_chat.send_message(T.UNLINKED if done else T.NOT_LINKED)
 
 
+CANCEL_MIN_HOURS = float(os.getenv("CANCEL_MIN_HOURS", "2"))
+
+
+def _parse(data):
+    try:
+        _, action, loc, appt_id = data.split(":")
+        return action, int(loc), int(appt_id)
+    except ValueError:
+        return None, None, None
+
+
+async def on_cancel_visit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """rm:cx = ask "cancel this visit?"; rm:cxn = keep it (buttons back); rm:cxy = delete it in Altegio."""
+    q = update.callback_query
+    bd = context.application.bot_data
+    client, links = bd.get("altegio"), bd.get("links")
+    action, loc, appt_id = _parse(q.data)
+    if action is None:
+        await q.answer()
+        return
+    if client is None:
+        await q.answer(T.UNAVAILABLE, show_alert=True)
+        return
+    if await links.chat_for_appointment(loc, appt_id) != update.effective_chat.id:
+        await q.answer(T.NOT_YOURS, show_alert=True)
+        return
+    if action == "cx":
+        await q.answer()
+        ask = InlineKeyboardMarkup([[
+            InlineKeyboardButton(T.CANCEL_YES, callback_data="rm:cxy:%d:%d" % (loc, appt_id)),
+            InlineKeyboardButton(T.CANCEL_NO, callback_data="rm:cxn:%d:%d" % (loc, appt_id)),
+        ]])
+        try:
+            await q.edit_message_text((q.message.text or "") + "\n\n" + T.CANCEL_ASK, reply_markup=ask)
+        except BadRequest:
+            pass
+        return
+    try:
+        appt = await client.get_appointment(loc, appt_id)
+    except AltegioError as e:
+        logger.warning("cancel: cannot load %s/%s: %s", loc, appt_id, e)
+        await q.answer(T.CANT_CHANGE, show_alert=True)
+        return
+    text = (q.message.text or "").replace("\n\n" + T.CANCEL_ASK, "")
+    if action == "cxn":
+        await q.answer()
+        try:
+            await q.edit_message_text(text, reply_markup=move_confirm_buttons(appt) if appt.active else None)
+        except BadRequest:
+            pass
+        return
+    now = datetime.now(client.tz)
+    if not appt.active or appt.start <= now:
+        await q.answer(T.CANT_CHANGE, show_alert=True)
+        return
+    if appt.start - now < timedelta(hours=CANCEL_MIN_HOURS):
+        phone = (bd.get("shop") or {}).get("phone_display", "")
+        await q.answer(T.CANCEL_TOO_LATE.format(hours="%g" % CANCEL_MIN_HOURS, phone=phone), show_alert=True)
+        return
+    try:
+        await client.cancel_appointment(loc, appt_id)
+    except AltegioError as e:
+        logger.warning("cancel %s/%s failed: %s", loc, appt_id, e)
+        await q.answer(T.CANT_CHANGE, show_alert=True)
+        return
+    logger.info("visit %s/%s cancelled by chat %s", loc, appt_id, update.effective_chat.id)
+    await q.answer(T.CANCELLED)
+    try:
+        await q.edit_message_text(text + "\n\n" + T.CANCELLED, reply_markup=None)
+    except BadRequest:
+        pass
+
+
 def handlers():
     return [
         CallbackQueryHandler(on_confirm_visit, pattern=r"^rm:ok:\d+:\d+$"),
+        CallbackQueryHandler(on_cancel_visit, pattern=r"^rm:cx[yn]?:\d+:\d+$"),
         CommandHandler("stop_reminders", unlink_command),
     ]

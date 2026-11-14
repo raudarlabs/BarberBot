@@ -17,6 +17,7 @@ Contracts come from the Altegio API catalog (base https://api.alteg.io/api/v1):
     POST /locations/{loc}/appointments                     create (staff_id, services, client, datetime, seance_length)
     PUT  /locations/{loc}/appointments/{id}                full update (used to move the time)
     POST /locations/{loc}/appointments/{id}/attendance     {"attendance": 2} = client confirmed
+    DELETE /locations/{loc}/appointments/{id}              client cancelled (204)
     GET  /client/{loc}/{id}                                client card (phone)
 
 Every call needs `Authorization: Bearer <partner token>, User <user token>`.
@@ -547,6 +548,10 @@ class HttpAltegioClient:
             "POST", "/locations/%d/appointments/%d/attendance" % (location_id, appointment_id),
             json={"attendance": 2},
         )
+
+    async def cancel_appointment(self, location_id: int, appointment_id: int) -> None:
+        """Client cancelled: delete the appointment (what Altegio does when a client cancels online). 204."""
+        await self._request("DELETE", "/locations/%d/appointments/%d" % (location_id, appointment_id))
 
     async def reschedule_appointment(self, appt: Appointment, new_start: datetime) -> Appointment:
         """PUT is a full update: resend everything we know unchanged, only the time moves."""
