@@ -25,6 +25,7 @@ os.environ["TELEGRAM_BOT_TOKEN"] = "123456:TEST-TOKEN"
 import _kv  # noqa: E402
 import _games  # noqa: E402
 import idea  # noqa: E402
+import stats  # noqa: E402
 import leaderboard  # noqa: E402
 import prize  # noqa: E402
 import score  # noqa: E402
@@ -320,6 +321,41 @@ class IdeaTests(unittest.TestCase):
         for _ in range(5):
             self.assertEqual(self.post(OLENA, {"text": "Ідея номер якась, достатньо довга"})[0], 200)
         self.assertEqual(self.post(OLENA, {"text": "Шоста ідея за день — забагато"})[0], 429)
+
+
+class StatsTests(unittest.TestCase):
+    def setUp(self):
+        _kv._memory = None
+        os.environ["ARCADE_DEV"] = "1"
+        os.environ["ARCADE_ADMIN_KEY"] = "staff-key"
+
+    def test_counts_plays_guests_finished_players_and_hub(self):
+        for user, value in ((OLENA, 12), (TARAS, 30), (OLENA, 20)):
+            status, data = call(session.handle, "POST", body={"game": "dryer"}, init_data=sign(user))
+            _kv.memory().data["sess:" + data["session"]] = json.dumps(
+                dict(json.loads(_kv.memory().data["sess:" + data["session"]]), t=time.time() - 60))
+            self.assertEqual(call(score.handle, "POST", body={"session": data["session"], "score": value},
+                                  init_data=sign(user))[0], 200)
+        call(session.handle, "POST", body={"game": "snake"}, init_data=sign(OLENA))  # started, not finished
+        self.assertEqual(call(session.handle, "POST", body={"game": "snake"},
+                              init_data=sign(OLENA, tamper=True))[0], 401)  # no valid Telegram identity
+        call(summary.handle)
+        call(summary.handle)
+
+        status, st = dispatch(stats.handle, Request("GET", "/", {"X-Admin-Key": "staff-key"}.items()))
+        self.assertEqual(status, 200, st)
+        dryer, snake, hub = st["games"]["dryer"], st["games"]["snake"], st["games"]["hub"]
+        self.assertEqual(dryer["plays"], {"all": 3, "month": 3, "today": 3})
+        self.assertEqual((dryer["finished"]["month"], dryer["players"]["month"], dryer["best_month"]), (3, 2, 30))
+        self.assertEqual((snake["plays"]["today"], snake["guest"]["today"], snake["finished"]["month"]), (1, 1, 0))
+        self.assertEqual(hub["opens"]["today"], 2)
+        self.assertEqual(len(st["days"]), 14)
+        self.assertEqual(st["days"][-1], st["today"])
+        self.assertEqual(dryer["daily"]["plays"][-1], 3)
+        self.assertEqual(sum(dryer["daily"]["plays"][:-1]), 0)
+
+    def test_staff_key_required(self):
+        self.assertEqual(dispatch(stats.handle, Request("GET", "/", {"X-Admin-Key": "x"}.items()))[0], 403)
 
 
 if __name__ == "__main__":

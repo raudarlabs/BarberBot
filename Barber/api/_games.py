@@ -53,6 +53,23 @@ def month_id(ts=None):
     return kyiv_now(ts).strftime("%Y-%m")
 
 
+def day_id(ts=None):
+    """Current day in Kyiv time, e.g. '2026-11-14'."""
+    return kyiv_now(ts).strftime("%Y-%m-%d")
+
+
+def last_days(n, ts=None):
+    """The last n Kyiv days, oldest first, ending today."""
+    today = kyiv_now(ts).date()
+    return [(today - timedelta(days=i)).isoformat() for i in range(n - 1, -1, -1)]
+
+
+def stat_keys(kind, name, ts=None):
+    """Counter keys for analytics: all time, this Kyiv month, today. e.g. stats:plays:snake:2026-11."""
+    base = "stats:%s:%s" % (kind, name)
+    return [base, "%s:%s" % (base, month_id(ts)), "%s:%s" % (base, day_id(ts))]
+
+
 def _shift(month, delta):
     y, m = map(int, month.split("-"))
     m += delta

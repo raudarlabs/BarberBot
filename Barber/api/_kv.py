@@ -10,7 +10,7 @@ Backends, first match wins:
 3. In-memory stand-in for local dev and tests (ARCADE_DEV=1).
 
 Supported commands: SET [EX n] [NX], GET, GETDEL, INCR, EXPIRE, ZADD [GT],
-ZREVRANGE [WITHSCORES], ZREVRANK, ZSCORE, HSET, HMGET.
+ZREVRANGE [WITHSCORES], ZREVRANK, ZSCORE, ZCARD, HSET, HMGET.
 """
 import json
 import os
@@ -172,6 +172,8 @@ def _sql(c):
         return sql, [a[0], a[1]], lambda rows: int(rows[0][0]) if rows else None
     if op == "ZSCORE":
         return "select s from arcade_zs where k = $1 and m = $2", [a[0], a[1]], lambda rows: _num(first(rows))
+    if op == "ZCARD":
+        return "select count(*) from arcade_zs where k = $1", [a[0]], lambda rows: int(rows[0][0])
     if op == "HSET":
         params, values = [a[0]], []
         for i in range(1, len(a), 2):
@@ -324,6 +326,8 @@ class MemoryRedis:
         if op == "ZSCORE":
             z = self.data.get(a[0], {}) if self._alive(a[0]) else {}
             return self._num(z[a[1]]) if a[1] in z else None
+        if op == "ZCARD":
+            return len(self.data.get(a[0], {})) if self._alive(a[0]) else 0
         if op == "HSET":
             if not self._alive(a[0]):
                 self.data[a[0]] = {}

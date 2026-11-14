@@ -63,7 +63,8 @@ class PostgresConformance(unittest.TestCase):
                   ["ZREVRANGE", z, "0", "-1", "WITHSCORES"], ["ZREVRANGE", z, "0", "0", "WITHSCORES"],
                   ["ZREVRANGE", self.p + "empty", "0", "0", "WITHSCORES"])
         self.both(["ZREVRANK", z, "111"], ["ZREVRANK", z, "222"], ["ZREVRANK", z, "333"], ["ZREVRANK", z, "nope"],
-                  ["ZSCORE", z, "444"], ["ZSCORE", z, "555"], ["ZSCORE", z, "nope"])
+                  ["ZSCORE", z, "444"], ["ZSCORE", z, "555"], ["ZSCORE", z, "nope"],
+                  ["ZCARD", z], ["ZCARD", self.p + "empty"])
 
     def test_hashes_like_player_names(self):
         h = self.p + "users"

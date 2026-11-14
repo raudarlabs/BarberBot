@@ -22,7 +22,7 @@ from _http import Request, dispatch  # noqa: E402
 
 ENDPOINTS = {
     name: importlib.import_module(name).handle
-    for name in ("session", "score", "leaderboard", "summary", "prize", "idea")
+    for name in ("session", "score", "leaderboard", "summary", "prize", "idea", "stats")
 }
 
 

@@ -10,7 +10,7 @@ import sys
 from http.server import BaseHTTPRequestHandler
 
 sys.path.insert(0, os.path.dirname(__file__))
-from _games import GAMES, board_key, month_ends_at, month_id, past_months, prize_code  # noqa: E402
+from _games import GAMES, board_key, month_ends_at, month_id, past_months, prize_code, stat_keys  # noqa: E402
 from _http import serve  # noqa: E402
 from _kv import cmd, pipeline  # noqa: E402
 from _tg import current_user  # noqa: E402
@@ -36,7 +36,8 @@ def handle(req):
             slots.append(("best_all", g, None)); cmds.append(["ZSCORE", board_key(g, "all"), uid])
         for m in months:
             slots.append(("winner", g, m)); cmds.append(["ZREVRANGE", board_key(g, m), 0, 0, "WITHSCORES"])
-    res = pipeline(*cmds) if cmds else []
+    cmds += [["INCR", k] for k in stat_keys("opens", "hub")]  # analytics: hub opens (extra results unused)
+    res = pipeline(*cmds)
 
     ids = {r[0] for (kind, _, _), r in zip(slots, res) if kind in ("leader", "winner") and r}
     ids = sorted(ids)

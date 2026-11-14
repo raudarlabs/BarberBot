@@ -12,29 +12,38 @@ import time
 from http.server import BaseHTTPRequestHandler
 
 sys.path.insert(0, os.path.dirname(__file__))
-from _games import GAMES, RATE_LIMIT_PER_MIN, SESSION_TTL  # noqa: E402
+from _games import GAMES, RATE_LIMIT_PER_MIN, SESSION_TTL, stat_keys  # noqa: E402
 from _http import BadRequest, serve  # noqa: E402
-from _kv import pipeline  # noqa: E402
-from _tg import current_user, display_name  # noqa: E402
+from _kv import RedisError, pipeline  # noqa: E402
+from _tg import AuthError, current_user, display_name  # noqa: E402
 
 
 def handle(req):
-    user = current_user(req.init_data)
     game = req.json().get("game")
     if game not in GAMES:
         raise BadRequest("unknown_game")
+    try:
+        user = current_user(req.init_data)
+    except AuthError:
+        # Played without Telegram identity (old keyboard button, plain browser): count it, then refuse.
+        try:
+            pipeline(*[["INCR", k] for k in stat_keys("guest", game)])
+        except RedisError:
+            pass
+        raise
 
     uid = str(user["id"])
     now = time.time()
     rl_key = "rl:%s:%d" % (uid, int(now // 60))
     sid = secrets.token_urlsafe(18)
-    count, _, _, _, _ = pipeline(
+    count = pipeline(
         ["INCR", rl_key],
         ["EXPIRE", rl_key, 120],
         ["SET", "sess:" + sid, json.dumps({"u": uid, "g": game, "t": now}), "EX", SESSION_TTL],
         ["HSET", "users", uid, display_name(user)],
-        ["INCR", "stats:plays:" + game],
+        *[["INCR", k] for k in stat_keys("plays", game)]
     )
+    count = count[0]
     if int(count) > RATE_LIMIT_PER_MIN:
         raise BadRequest("rate_limited", 429)
     return 200, {"session": sid}

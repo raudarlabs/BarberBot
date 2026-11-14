@@ -12,7 +12,7 @@ import time
 from http.server import BaseHTTPRequestHandler
 
 sys.path.insert(0, os.path.dirname(__file__))
-from _games import board_key, max_allowed  # noqa: E402
+from _games import board_key, max_allowed, stat_keys  # noqa: E402
 from _http import BadRequest, serve  # noqa: E402
 from _kv import cmd, pipeline  # noqa: E402
 from _tg import current_user  # noqa: E402
@@ -55,6 +55,7 @@ def handle(req):
         ["ZREVRANK", month, uid],
         ["ZSCORE", alltime, uid],
         ["ZREVRANK", alltime, uid],
+        *[["INCR", k] for k in stat_keys("finished", game)]
     )
     month_best, month_rank, all_best, all_rank = res[2], res[3], res[4], res[5]
     if _int(month_best) == score:

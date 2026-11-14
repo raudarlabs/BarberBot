@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Статистика ігор</title>
+<style>
+  :root { --bg: #120d0f; --card: #1d1416; --line: rgba(214,150,160,.22); --accent: #e4b8b2; --accent-hi: #f5d9d4; --wine: #a8435f; --cream: #f3ebe8; --muted: #a8939a; --red: #e0433a; }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--cream); padding: 24px 16px 40px; }
+  main { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+  h1 { color: var(--accent); font-size: 24px; }
+  .sub { color: var(--muted); font-size: 13px; }
+  label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 6px; }
+  input { width: 100%; font-size: 17px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--cream); }
+  button { width: 100%; font-size: 17px; font-weight: 800; padding: 14px; border-radius: 12px; border: 0; cursor: pointer; background: linear-gradient(135deg, var(--accent-hi), var(--accent)); color: #1c1113; }
+  .wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+  th, td { padding: 10px 12px; text-align: right; white-space: nowrap; border-top: 1px solid rgba(255,255,255,.05); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; border-top: 0; }
+  th:first-child, td:first-child { text-align: left; }
+  tr.total td { font-weight: 800; color: var(--accent-hi); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .card h2 { font-size: 15px; margin-bottom: 10px; display: flex; justify-content: space-between; }
+  .card h2 span { color: var(--muted); font-weight: 500; }
+  .bars { display: flex; align-items: flex-end; gap: 3px; height: 60px; }
+  .bar { flex: 1; background: var(--wine); border-radius: 3px 3px 0 0; min-height: 2px; position: relative; }
+  .bar.today { background: var(--accent); }
+  .days { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-top: 4px; }
+  .msg { color: var(--muted); text-align: center; padding: 16px; }
+  .bad { color: var(--red); }
+  .note { color: var(--muted); font-size: 12px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<main>
+  <h1>📊 Статистика ігор</h1>
+  <div><label for="key">Ключ персоналу</label><input id="key" type="password" autocomplete="off"></div>
+  <button id="load" type="button">Показати</button>
+  <div id="out"></div>
+  <p class="note">
+    «Партії» — скільки разів натиснули «Грати». «Без рейтингу» — з них відкриті старою кнопкою бота або просто в браузері
+    (результат не зберігається). «Завершено» — партії з результатом у рейтингу. «Гравців» — різних людей у рейтингу місяця.
+    Дні й місяці за київським часом. Лічильники працюють з 14 листопада 2026.
+  </p>
+</main>
+<script>
+  const NAMES = { dryer: 'Фен-пілот', fade: 'Ідеальний фейд', beard: 'Борода-ніндзя', snake: 'Змійка', blocks: 'Укладка' };
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  try { $('key').value = sessionStorage.getItem('prizeKey') || ''; } catch (e) {}
+
+  function bars(series, days, today) {
+    const max = Math.max(1, ...series);
+    return `<div class="bars">${series.map((v, i) =>
+      `<div class="bar${days[i] === today ? ' today' : ''}" style="height:${Math.round((v / max) * 100)}%" title="${days[i]}: ${v}"></div>`).join('')}</div>
+      <div class="days"><span>${days[0].slice(5)}</span><span>${days[days.length - 1].slice(5)}</span></div>`;
+  }
+
+  async function load() {
+    const key = $('key').value.trim();
+    try { sessionStorage.setItem('prizeKey', key); } catch (e) {}
+    $('out').innerHTML = '<p class="msg">Завантаження…</p>';
+    const res = await fetch('/api/stats', { headers: { 'X-Admin-Key': key } });
+    const d = await res.json().catch(() => ({}));
+    if (res.status === 403) { $('out').innerHTML = '<p class="msg bad">Невірний ключ персоналу</p>'; return; }
+    if (!res.ok) { $('out').innerHTML = `<p class="msg bad">Помилка (${res.status})</p>`; return; }
+
+    const ids = Object.keys(NAMES);
+    const sum = (f) => ids.reduce((a, g) => a + f(d.games[g]), 0);
+    const row = (name, p, cls = '') => `<tr class="${cls}"><td>${name}</td><td>${p.today}</td><td>${p.month}</td><td>${p.all}</td><td>${p.guest}</td><td>${p.fin}</td><td>${p.players}</td><td>${p.best}</td></tr>`;
+    const stat = (g) => ({
+      today: g.plays.today, month: g.plays.month, all: g.plays.all, guest: g.guest.month,
+      fin: g.finished.month, players: g.players.month, best: g.best_month ?? '—',
+    });
+    let html = `<p class="sub">Місяць ${esc(d.month)} · сьогодні ${esc(d.today)} · хаб відкривали: сьогодні ${d.games.hub.opens.today}, за місяць ${d.games.hub.opens.month}</p>
+      <div class="wrap"><table><thead><tr><th>Гра</th><th>Сьогодні</th><th>Місяць</th><th>Всього</th><th>Без рейтингу (міс.)</th><th>Завершено (міс.)</th><th>Гравців (міс.)</th><th>Рекорд міс.</th></tr></thead><tbody>`;
+    ids.forEach((g) => { html += row(esc(NAMES[g]), stat(d.games[g])); });
+    html += row('Разом', {
+      today: sum((g) => g.plays.today), month: sum((g) => g.plays.month), all: sum((g) => g.plays.all),
+      guest: sum((g) => g.guest.month), fin: sum((g) => g.finished.month), players: '—', best: '',
+    }, 'total');
+    html += '</tbody></table></div>';
+    const daySum = d.days.map((_, i) => ids.reduce((a, g) => a + d.games[g].daily.plays[i], 0));
+    html += `<div class="card"><h2>Партії по днях <span>усі ігри, 14 днів</span></h2>${bars(daySum, d.days, d.today)}</div>`;
+    ids.forEach((g) => {
+      const s = d.games[g].daily.plays;
+      html += `<div class="card"><h2>${esc(NAMES[g])} <span>${s.reduce((a, b) => a + b, 0)} за 14 днів</span></h2>${bars(s, d.days, d.today)}</div>`;
+    });
+    $('out').innerHTML = html;
+  }
+  $('load').addEventListener('click', load);
+</script>
+</body>
+</html>
