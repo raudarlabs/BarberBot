@@ -33,6 +33,11 @@ def _n(v):
 
 def handle(req):
     _check_admin(req)
+    return 200, collect()
+
+
+def collect():
+    """Arcade analytics (also used by the bot's admin panel)."""
     month, today, days = month_id(), day_id(), last_days(DAYS)
 
     slots, cmds = [], []
@@ -64,7 +69,7 @@ def handle(req):
         else:
             out[g].setdefault(kind, {})[period] = value if kind == "players" else _n(value)
 
-    return 200, {"month": month, "today": today, "days": days, "games": out}
+    return {"month": month, "today": today, "days": days, "games": out}
 
 
 class handler(BaseHTTPRequestHandler):

@@ -8,8 +8,10 @@ Best effort: a failed notification is logged and never affects the client's flow
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import sys
 from typing import List, Optional
 
 from telegram.error import TelegramError
@@ -17,6 +19,23 @@ from telegram.error import TelegramError
 import texts as T
 
 logger = logging.getLogger(__name__)
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "api"))
+import _games  # noqa: E402
+import _kv  # noqa: E402
+
+# Bot activity counters (all time / Kyiv month / Kyiv day), shown in the admin panel and digest.
+BOT_EVENTS = ("booked", "moved", "cancelled", "reminded")
+
+
+async def count_event(name: str, n: int = 1) -> None:
+    """Best effort: +n to stats:bot:<name> for all time, this month and today."""
+    if n <= 0:
+        return
+    try:
+        await asyncio.to_thread(_kv.pipeline, *[["INCR", k] for k in _games.stat_keys("bot", name) for _ in range(n)])
+    except Exception as e:  # noqa: BLE001 - analytics must never break the client's flow
+        logger.warning("count_event %s failed: %s", name, e)
 
 
 def admin_chat_ids(env=None) -> List[int]:

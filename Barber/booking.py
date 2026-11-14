@@ -594,6 +594,7 @@ async def on_confirm(update, context):
         await q.edit_message_reply_markup(None)
     except Exception:
         pass
+    await admin_notify.count_event("moved" if bk.get("reschedule") else "booked")
     try:
         user = update.effective_user
         who = (bk.get("name") or admin_notify.user_name(user), bk.get("phone") or appt.client_phone,

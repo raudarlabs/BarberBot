@@ -33,6 +33,7 @@ from config import (
     booking_locations,
 )
 from openai_service import analyze_photo_and_get_hairstyles, generate_all_hairstyle_images
+import admin
 import booking
 import menu
 import reminders
@@ -236,6 +237,8 @@ def add_handlers(app: Application, persistent: bool = False) -> Application:
     for h in reminders.handlers():
         app.add_handler(h)
     for h in menu.handlers():  # menu buttons, prices, contact sharing outside booking
+        app.add_handler(h)
+    for h in admin.handlers():  # /admin panel, only for ADMIN_CHAT_IDS
         app.add_handler(h)
     app.add_handler(CallbackQueryHandler(booking.stale_button, pattern=r"^bk:"))
     app.add_handler(CommandHandler("start", start))

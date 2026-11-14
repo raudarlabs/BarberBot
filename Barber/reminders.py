@@ -147,6 +147,7 @@ async def run_reminders(client, links, locations: Dict[int, str], send: SendFn,
                 continue
             await links.mark_sent(appt.id, key)
             await links.remember_appointment(loc, appt.id, chat)
+    await admin_notify.count_event("reminded", sent)
     return sent
 
 
@@ -280,6 +281,7 @@ async def on_cancel_visit(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await q.answer(T.CANT_CHANGE, show_alert=True)
         return
     logger.info("visit %s/%s cancelled by chat %s", loc, appt_id, update.effective_chat.id)
+    await admin_notify.count_event("cancelled")
     try:
         user = update.effective_user
         if not admin_notify.admin_chat_ids():
