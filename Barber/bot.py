@@ -1,10 +1,12 @@
 import asyncio
+import re
 import io
 import json
 import logging
 import os
 import sys
 import time
+from typing import Optional
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -34,6 +36,7 @@ from config import (
 )
 from openai_service import analyze_photo_and_get_hairstyles, generate_all_hairstyle_images
 import admin
+import admin_notify
 import booking
 import menu
 import reminders
@@ -63,8 +66,32 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 MAIN_MENU_KEYBOARD = menu.main_menu_keyboard()
 
 
+# Where people open the bot from: t.me/custom_true_bot?start=<source> (site button, QR codes).
+START_SOURCES = ("site", "qr_desk", "qr_mirror", "instagram")
+FIRST_SOURCE = "bb:src"  # hash: chat id -> the source it first came from
+
+
+async def track_start_source(chat_id: int, arg: str) -> Optional[str]:
+    """Count an open from a known source, and a new person the first time this chat brings one."""
+    src = arg if arg in START_SOURCES else ("other" if re.fullmatch(r"[a-z0-9_]{2,32}", arg or "") else None)
+    if src is None:
+        return None
+    try:
+        first = await asyncio.to_thread(_kv.pipeline, ["HMGET", FIRST_SOURCE, str(chat_id)])
+        await admin_notify.count_event("open_" + src)
+        if not first[0][0]:
+            await asyncio.to_thread(_kv.pipeline, ["HSET", FIRST_SOURCE, str(chat_id), src])
+            await admin_notify.count_event("joined_" + src)
+    except Exception as e:  # noqa: BLE001 - bookkeeping must not break /start
+        logger.warning("start source %s: %s", src, e)
+    return src
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handles /start command."""
+    """Handles /start command (also /start <source> from the site and the QR codes)."""
+    args = getattr(context, "args", None) or []
+    if args:
+        await track_start_source(update.effective_chat.id, args[0])
     await update.message.reply_text(texts.WELCOME, reply_markup=MAIN_MENU_KEYBOARD)
 
 

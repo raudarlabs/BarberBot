@@ -351,6 +351,12 @@
       html += `<div class="card"><h2>Бот <span>${c.total} клієнтів · активні сьогодні ${c.day} · за 7 днів ${c.week}</span></h2>
         <table><tr><th></th><th>Сьогодні</th><th>7 днів</th><th>Місяць</th><th>Всього</th></tr>${Object.keys(names).map((k) =>
         `<tr><td>${names[k]}</td><td>${e[k].today}</td><td>${e[k].week}</td><td>${e[k].month}</td><td>${e[k].all}</td></tr>`).join('')}</table></div>`;
+      const src = d.bot.sources;
+      if (src) {
+        const SRCN = { site: 'Кнопка на сайті', qr_desk: 'QR на рецепції', qr_mirror: 'QR на дзеркалі', instagram: 'Instagram', other: 'Інше посилання' };
+        html += `<div class="card"><h2>Звідки приходять у бот <span>нові люди · відкриття</span></h2><table><tr><th></th><th>Нових за місяць</th><th>Нових усього</th><th>Відкриттів за місяць</th></tr>${Object.keys(SRCN).map((k) =>
+          `<tr><td>${SRCN[k]}</td><td>${(src[k] || {}).joined_month || 0}</td><td>${(src[k] || {}).joined_all || 0}</td><td>${(src[k] || {}).opens_month || 0}</td></tr>`).join('')}</table></div>`;
+      }
     }
     return html || '<p class="msg">Немає даних</p>';
   }

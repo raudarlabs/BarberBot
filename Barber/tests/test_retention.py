@@ -209,6 +209,21 @@ class WaitlistTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await waitlist._all(self.links), {})
 
 
+class StartSourceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_opens_and_new_people_by_source(self):
+        _kv._memory = None
+        import bot
+        self.assertEqual(await bot.track_start_source(1, "qr_desk"), "qr_desk")
+        self.assertEqual(await bot.track_start_source(1, "qr_desk"), "qr_desk")   # the same person again
+        self.assertEqual(await bot.track_start_source(1, "site"), "site")         # first touch stays QR
+        self.assertEqual(await bot.track_start_source(2, "promo2026"), "other")
+        self.assertIsNone(await bot.track_start_source(3, "Привіт!"))
+        get = lambda k: _kv.pipeline(["GET", k])[0]  # noqa: E731
+        self.assertEqual((get("stats:bot:open_qr_desk"), get("stats:bot:joined_qr_desk")), ("2", "1"))
+        self.assertEqual((get("stats:bot:open_site"), get("stats:bot:joined_site")), ("1", None))
+        self.assertEqual(get("stats:bot:joined_other"), "1")
+
+
 class NotifyChatsTests(unittest.TestCase):
     def test_notifications_go_to_the_shop_admin_account(self):
         import admin_notify

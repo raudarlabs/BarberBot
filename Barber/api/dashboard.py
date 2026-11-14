@@ -81,9 +81,28 @@ async def _report(p: str, staff_id, admin: bool) -> dict:
         await client.aclose()
 
 
+START_SOURCES = ("site", "qr_desk", "qr_mirror", "instagram", "other")
+
+
+def _sources() -> dict:
+    """People who came to the bot by source (t.me/...?start=<source>): this month and all time."""
+    month = _games.month_id()
+    cmds = []
+    for src in START_SOURCES:
+        for kind in ("joined", "open"):
+            base = "stats:bot:%s_%s" % (kind, src)
+            cmds += [["GET", base + ":" + month], ["GET", base]]
+    vals = [int(float(v)) if v else 0 for v in _kv.pipeline(*cmds)]
+    out = {}
+    for i, src in enumerate(START_SOURCES):
+        j, m, o, oa = vals[4 * i: 4 * i + 4]
+        out[src] = {"joined_month": j, "joined_all": m, "opens_month": o, "opens_all": oa}
+    return out
+
+
 def _bot() -> dict:
     import admin  # the bot's counters
-    return {"events": admin._event_counts(), "chats": admin._chat_counts()}
+    return {"events": admin._event_counts(), "chats": admin._chat_counts(), "sources": _sources()}
 
 
 def handle(req):
