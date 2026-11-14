@@ -168,7 +168,10 @@ async def show_days(update, context):
     bk = _bk(context)
     today = datetime.now(client.tz).date()
     try:
-        days = await client.working_dates(bk["loc"], bk["staff_id"], today, DAYS_AHEAD)
+        days = await client.booking_dates(bk["loc"], bk["staff_id"], _service_ids(bk), today, DAYS_AHEAD)
+        appt = bk.get("appt") if bk.get("reschedule") else None
+        if appt is not None and appt.start.date() >= today and appt.start.date() not in days:
+            days = sorted(days + [appt.start.date()])  # moving within the visit's own day is allowed
     except AltegioError as e:
         return await _api_failed(update, context, e)
     back = None if bk.get("reschedule") else "svc"
@@ -208,11 +211,23 @@ async def show_times(update, context, prefix=None, window=None, starts=None):
     return TIME
 
 
+def _service_ids(bk):
+    """The chosen service, or (when moving a visit) the visit's own services."""
+    if bk.get("service_id"):
+        return [bk["service_id"]]
+    appt = bk.get("appt")
+    return [int(s["id"]) for s in (getattr(appt, "services", None) or []) if isinstance(s, dict) and s.get("id")]
+
+
 async def _free_starts(client, bk, day):
-    """Free starts; when moving a visit, its own current slot counts as free."""
+    """New booking: start times exactly as Altegio's online booking offers them (busy time, service
+    length and the location's online-booking rules included). Moving a visit: the barber's free grid
+    with the visit's own slot counted as free, so it can shift by less than its length."""
     appt = bk.get("appt") if bk.get("reschedule") else None
-    exclude = [(appt.start, appt.end)] if appt is not None and appt.staff_id == bk["staff_id"] else []
-    return await client.free_starts(bk["loc"], bk["staff_id"], day, bk["duration"], exclude=exclude)
+    if appt is not None:
+        exclude = [(appt.start, appt.end)] if appt.staff_id == bk["staff_id"] else []
+        return await client.free_starts(bk["loc"], bk["staff_id"], day, bk["duration"], exclude=exclude)
+    return await client.booking_times(bk["loc"], bk["staff_id"], day, _service_ids(bk))
 
 
 def _start_dt(context) -> datetime:

@@ -10,6 +10,8 @@ Contracts come from the Altegio API catalog (base https://api.alteg.io/api/v1):
     GET  /locations/{loc}/services?staff_id=               a barber's services (JSON:API)
     GET  /timetable/dates/{loc}/{date}?staff_id=           working dates
     GET  /timetable/seances/{loc}/{staff}/{date}           5-minute grid: [{time, is_free}]
+    GET  /book_dates/{loc}?staff_id=&service_ids[]=        online-bookable days (widget calendar)
+    GET  /book_times/{loc}/{staff}/{date}?service_ids[]=   online-bookable start times
     GET  /locations/{loc}/appointments                     start_date, end_date (days), include=client
     GET  /locations/{loc}/appointments/{id}
     POST /locations/{loc}/appointments                     create (staff_id, services, client, datetime, seance_length)
@@ -416,6 +418,44 @@ class HttpAltegioClient:
                 continue
             if start <= dd <= last:
                 out.append(dd)
+        return sorted(set(out))
+
+    async def booking_dates(self, location_id: int, staff_id: int, service_ids: Sequence[int],
+                            start: date, days: int) -> List[date]:
+        """Days a client can book online (the Altegio booking widget's calendar): free time for these
+        services under the location's online-booking rules — not merely the barber's working days."""
+        params = {"staff_id": staff_id}
+        if service_ids:
+            params["service_ids[]"] = [int(x) for x in service_ids]
+        data, _ = await self._request("GET", "/book_dates/%d" % location_id, params=params)
+        raw = data.get("booking_dates") if isinstance(data, dict) else _as_list(data)
+        last = start + timedelta(days=days - 1)
+        out = []
+        for d in raw or []:
+            try:
+                dd = date.fromisoformat(str(d)[:10])
+            except ValueError:
+                continue
+            if start <= dd <= last:
+                out.append(dd)
+        return sorted(set(out))
+
+    async def booking_times(self, location_id: int, staff_id: int, day: date,
+                            service_ids: Sequence[int]) -> List[datetime]:
+        """Start times the Altegio booking widget offers on `day` for these services."""
+        params = {"service_ids[]": [int(x) for x in service_ids]} if service_ids else None
+        data, _ = await self._request(
+            "GET", "/book_times/%d/%d/%s" % (location_id, staff_id, day.isoformat()), params=params)
+        out = []
+        for x in _as_list(data):
+            raw = x.get("datetime") if isinstance(x, dict) else None
+            try:
+                dt = datetime.fromisoformat(str(raw))
+            except (TypeError, ValueError):
+                continue
+            dt = dt.replace(tzinfo=self.tz) if dt.tzinfo is None else dt.astimezone(self.tz)
+            if dt.date() == day:
+                out.append(dt)
         return sorted(set(out))
 
     async def day_grid(self, location_id: int, staff_id: int, day: date) -> List[dict]:

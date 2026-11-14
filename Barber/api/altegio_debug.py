@@ -82,16 +82,16 @@ async def bot_view(location_id):
         now = datetime.now(client.tz)
         staff = await client.list_staff(location_id)
         out = {"staff": [s.name for s in staff], "per_staff": {}}
-        for s in staff[:4]:
+        for s in staff:
             services = await client.list_services(location_id, s.id)
-            entry = {"services": len(services), "first_free": None}
+            entry = {"services": len(services), "online_days": [], "first_day_times": []}
             if services:
-                for d in range(0, 10):
-                    day = (now + timedelta(days=d)).date()
-                    starts = await client.free_starts(location_id, s.id, day, services[0].duration)
-                    if starts:
-                        entry["first_free"] = "%s (%d slots)" % (starts[0].strftime("%Y-%m-%d %H:%M"), len(starts))
-                        break
+                days = await client.booking_dates(location_id, s.id, [services[0].id], now.date(), 14)
+                entry["online_days"] = [d.strftime("%d.%m") for d in days]
+                if days:
+                    times = await client.booking_times(location_id, s.id, days[0], [services[0].id])
+                    entry["first_day_times"] = [t.strftime("%H:%M") for t in times][:8]
+                entry["service"] = services[0].title
             out["per_staff"][s.name] = entry
         appts = await client.list_appointments(location_id, now, now + timedelta(days=1))
         out["appointments_next_24h"] = len(appts)

@@ -49,6 +49,23 @@ class _FlowBase(unittest.IsolatedAsyncioTestCase):
         state = await handler(FakeUpdate(self.chat, USER, query=q), self.ctx)
         return state, q
 
+    async def test_fully_booked_day_is_not_offered(self):
+        """Days come from Altegio's online booking (/book_dates), like the widget calendar: a working
+        day with no free time for the service is not offered (bug seen on the real API)."""
+        for h in range(9, 21):  # fill Ігор's whole Monday
+            self.backend.add_appointment(LOC, IGOR, datetime(self.day.year, self.day.month, self.day.day, h, 0,
+                                                             tzinfo=TZ), duration=3600)
+        await booking.start_booking(FakeUpdate(self.chat, USER, message=FakeMessage(self.chat)), self.ctx)
+        await self.press(booking.on_location, "bk:loc:%d" % LOC)
+        await self.press(booking.on_staff, "bk:stf:%d" % IGOR)
+        state, q = await self.press(booking.on_service, "bk:svc:%d" % HAIRCUT)
+        days = [b[1] for b in buttons(q.edits[-1][1]) if b[1].startswith("bk:day:")]
+        self.assertNotIn("bk:day:" + self.day.isoformat(), days)
+        self.assertIn("bk:day:" + (self.day + timedelta(days=1)).isoformat(), days)
+        paths = [r[1] for r in self.backend.requests]
+        self.assertTrue(any(p.startswith("/book_dates/") for p in paths))
+        self.assertFalse(any(p.startswith("/timetable/dates/") for p in paths))
+
     async def walk_to_time(self):
         state = await booking.start_booking(FakeUpdate(self.chat, USER, message=FakeMessage(self.chat)), self.ctx)
         self.assertEqual(state, booking.LOC)
@@ -206,7 +223,8 @@ class ReviewFixBookingTests(_FlowBase):
     async def test_all_evening_times_offered(self):
         await self.links.link(USER, "380671234567")
         self.ctx.user_data["bk"] = {"loc": LOC, "staff_id": 2106676, "staff_name": "Віктор Дяченко",
-                                    "duration": 1800, "day": (self.day + timedelta(days=1)).isoformat()}
+                                    "service_id": 10808287, "duration": 1800,  # 30-min "Стрижка машинкою"
+                                    "day": (self.day + timedelta(days=1)).isoformat()}
         state, q = await self.press(booking.on_back, "bk:back:day")  # renders days
         state, q = await self.press(booking.on_day, "bk:day:" + (self.day + timedelta(days=1)).isoformat())
         times = [b[1] for b in buttons(q.edits[-1][1]) if b[1].startswith("bk:t:")]

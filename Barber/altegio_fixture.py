@@ -81,6 +81,8 @@ class FixtureBackend:
             ("GET", r"/locations/(\d+)/services", self._services),
             ("GET", r"/timetable/dates/(\d+)/([\d-]+)", self._dates),
             ("GET", r"/timetable/seances/(\d+)/(\d+)/([\d-]+)", self._seances),
+            ("GET", r"/book_dates/(\d+)", self._book_dates),
+            ("GET", r"/book_times/(\d+)/(\d+)/([\d-]+)", self._book_times),
             ("GET", r"/locations/(\d+)/appointments", self._list_appointments),
             ("POST", r"/locations/(\d+)/appointments", self._create),
             ("GET", r"/locations/(\d+)/appointments/(\d+)", self._get_appointment),
@@ -119,6 +121,36 @@ class FixtureBackend:
         start = date.fromisoformat(day)
         return self._ok([(start + timedelta(days=i)).isoformat() for i in range(31)
                          if self._works(start + timedelta(days=i))])
+
+    def _service_length(self, loc, staff, service_id):
+        for svc in self._loc(loc).get("services_by_staff", {}).get(str(staff), []):
+            attrs = svc.get("attributes", svc)
+            if str(svc.get("id")) == str(service_id):
+                return int(attrs.get("seance_length") or attrs.get("duration") or attrs.get("length") or 3600)
+        return 3600
+
+    def _book_times(self, params, body, loc, staff, day):
+        from altegio import compute_free_starts
+        d = date.fromisoformat(day)
+        service = params.get("service_ids[]")
+        length = self._service_length(loc, staff, service) if service else 3600
+        grid = self._seances(params, body, loc, staff, day)[1]["data"]
+        starts = compute_free_starts(grid, d, length, self.tz, now=datetime.now(self.tz))
+        return self._ok([{"time": s.strftime("%H:%M"), "seance_length": length, "sum_length": length,
+                          "datetime": s.isoformat()} for s in starts])
+
+    def _book_dates(self, params, body, loc):
+        staff = params.get("staff_id")
+        today = datetime.now(self.tz).date()
+        working, booking = [], []
+        for i in range(62):
+            d = today + timedelta(days=i)
+            if not self._works(d):
+                continue
+            working.append(d.isoformat())
+            if staff and self._book_times(params, body, loc, staff, d.isoformat())[1]["data"]:
+                booking.append(d.isoformat())
+        return self._ok({"booking_dates": booking, "working_dates": working})
 
     def _seances(self, params, body, loc, staff, day):
         d = date.fromisoformat(day)
