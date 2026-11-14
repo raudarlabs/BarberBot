@@ -8,11 +8,13 @@ own row is flagged (and returned separately when outside the top).
 import os
 import sys
 
+from http.server import BaseHTTPRequestHandler
+
 sys.path.insert(0, os.path.dirname(__file__))
 from _games import (  # noqa: E402
     FIRST_MONTH, GAMES, HISTORY_SIZE, PERIODS, board_key, month_ends_at, month_id, past_months, valid_month,
 )
-from _http import BadRequest, make_handler  # noqa: E402
+from _http import BadRequest, serve  # noqa: E402
 from _kv import cmd, pipeline  # noqa: E402
 from _tg import current_user  # noqa: E402
 
@@ -67,4 +69,9 @@ def handle(req):
     }
 
 
-handler = make_handler(handle)
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        serve(self, handle, ("GET",))
+
+    def do_POST(self):
+        serve(self, handle, ("GET",))

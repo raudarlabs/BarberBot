@@ -1,14 +1,14 @@
 """
 Minimal request/response plumbing for Vercel's Python runtime.
 
-Each endpoint is a plain function `handle(req) -> (status, payload)`, wrapped
-into the BaseHTTPRequestHandler class Vercel expects via `make_handler`.
+Each endpoint is a plain function `handle(req) -> (status, payload)`; its module
+declares the literal `class handler(BaseHTTPRequestHandler)` Vercel looks for and
+calls `serve(self, handle, methods)`.
 The same functions are called directly by dev_server.py and the tests.
 """
 import json
 import sys
 import traceback
-from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
 from _kv import RedisError
@@ -65,27 +65,18 @@ def dispatch(fn, req):
         return 500, {"error": "internal"}
 
 
-def make_handler(fn, methods=("GET",)):
-    class handler(BaseHTTPRequestHandler):
-        def _run(self):
-            if self.command not in methods:
-                return self._send(405, {"error": "method_not_allowed"})
-            length = int(self.headers.get("Content-Length") or 0)
-            body = self.rfile.read(min(length, 64 * 1024)) if length else b""
-            req = Request(self.command, self.path, self.headers.items(), body)
-            status, payload = dispatch(fn, req)
-            self._send(status, payload)
-
-        def _send(self, status, payload):
-            data = json.dumps(payload, ensure_ascii=False).encode()
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-
-        do_GET = _run
-        do_POST = _run
-
-    return handler
+def serve(h, fn, methods=("GET",)):
+    """Run endpoint `fn` for a BaseHTTPRequestHandler instance `h` (Vercel's Python entrypoint)."""
+    if h.command not in methods:
+        status, payload = 405, {"error": "method_not_allowed"}
+    else:
+        length = int(h.headers.get("Content-Length") or 0)
+        body = h.rfile.read(min(length, 64 * 1024)) if length else b""
+        status, payload = dispatch(fn, Request(h.command, h.path, h.headers.items(), body))
+    data = json.dumps(payload, ensure_ascii=False).encode()
+    h.send_response(status)
+    h.send_header("Content-Type", "application/json; charset=utf-8")
+    h.send_header("Cache-Control", "no-store")
+    h.send_header("Content-Length", str(len(data)))
+    h.end_headers()
+    h.wfile.write(data)

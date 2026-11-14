@@ -7,9 +7,11 @@ and any monthly prizes they won (with the code to show at the shop).
 import os
 import sys
 
+from http.server import BaseHTTPRequestHandler
+
 sys.path.insert(0, os.path.dirname(__file__))
 from _games import GAMES, board_key, month_ends_at, month_id, past_months, prize_code  # noqa: E402
-from _http import make_handler  # noqa: E402
+from _http import serve  # noqa: E402
 from _kv import cmd, pipeline  # noqa: E402
 from _tg import current_user  # noqa: E402
 
@@ -64,4 +66,9 @@ def handle(req):
     return 200, {"month": month_id(), "ends_at": month_ends_at(), "games": out, "wins": wins}
 
 
-handler = make_handler(handle)
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        serve(self, handle, ("GET",))
+
+    def do_POST(self):
+        serve(self, handle, ("GET",))

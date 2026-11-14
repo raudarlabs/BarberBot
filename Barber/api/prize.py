@@ -12,9 +12,11 @@ import os
 import sys
 import time
 
+from http.server import BaseHTTPRequestHandler
+
 sys.path.insert(0, os.path.dirname(__file__))
 from _games import GAMES, board_key, past_months, prize_code  # noqa: E402
-from _http import BadRequest, make_handler  # noqa: E402
+from _http import BadRequest, serve  # noqa: E402
 from _kv import cmd, pipeline  # noqa: E402
 
 
@@ -64,4 +66,9 @@ def handle(req):
     return 200, prize
 
 
-handler = make_handler(handle, methods=("GET", "POST"))
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        serve(self, handle, ("GET", "POST"))
+
+    def do_POST(self):
+        serve(self, handle, ("GET", "POST"))

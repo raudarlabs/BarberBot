@@ -9,9 +9,11 @@ import os
 import sys
 import time
 
+from http.server import BaseHTTPRequestHandler
+
 sys.path.insert(0, os.path.dirname(__file__))
 from _games import board_key, max_allowed  # noqa: E402
-from _http import BadRequest, make_handler  # noqa: E402
+from _http import BadRequest, serve  # noqa: E402
 from _kv import cmd, pipeline  # noqa: E402
 from _tg import current_user  # noqa: E402
 
@@ -66,4 +68,9 @@ def handle(req):
     }
 
 
-handler = make_handler(handle, methods=("POST",))
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        serve(self, handle, ("POST",))
+
+    def do_POST(self):
+        serve(self, handle, ("POST",))

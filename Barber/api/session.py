@@ -9,9 +9,11 @@ import secrets
 import sys
 import time
 
+from http.server import BaseHTTPRequestHandler
+
 sys.path.insert(0, os.path.dirname(__file__))
 from _games import GAMES, RATE_LIMIT_PER_MIN, SESSION_TTL  # noqa: E402
-from _http import BadRequest, make_handler  # noqa: E402
+from _http import BadRequest, serve  # noqa: E402
 from _kv import pipeline  # noqa: E402
 from _tg import current_user, display_name  # noqa: E402
 
@@ -38,4 +40,9 @@ def handle(req):
     return 200, {"session": sid}
 
 
-handler = make_handler(handle, methods=("POST",))
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        serve(self, handle, ("POST",))
+
+    def do_POST(self):
+        serve(self, handle, ("POST",))

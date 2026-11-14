@@ -1,5 +1,10 @@
 {
   "outputDirectory": "public",
+  "functions": {
+    "api/*.py": {
+      "maxDuration": 10
+    }
+  },
   "headers": [
     {
       "source": "/(.*)\\.(js|css|html)",
