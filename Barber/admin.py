@@ -1,7 +1,8 @@
 """
 Admin panel inside the bot — only for chats listed in ADMIN_CHAT_IDS (others never see it).
 
-    /admin → 📋 Записи сьогодні / завтра · 🕳 Вільні вікна сьогодні / завтра · 📊 Статистика
+    /admin → 📋 Записи сьогодні / завтра · 🕳 Вільні вікна сьогодні / завтра · 📊 Дашборд (Mini App
+    public/stats.html) · ☀️ Дайджест · 👥 Команда. A barber from the team gets his own panel (team.py).
 
 Plus the text of the 9:00 morning digest (sent by api/cron_digest.py).
 Reads Altegio through the bot's own client and the shared store for statistics.
@@ -17,11 +18,12 @@ import time
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
 from telegram.error import BadRequest
 from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes
 
 import admin_notify
+import analytics
 import texts as T
 from altegio import AltegioError
 
@@ -42,15 +44,25 @@ def is_admin(update: Update) -> bool:
     return chat is not None and chat.id in admin_notify.admin_chat_ids()
 
 
+def dashboard_button(label: str = "📊 Дашборд") -> InlineKeyboardButton:
+    """Opens public/stats.html as a Mini App (it knows the viewer from Telegram); a text summary
+    when the site is not on https."""
+    from config import dashboard_url  # lazily: config reads the bot token at import
+    url = dashboard_url()
+    if url:
+        return InlineKeyboardButton(label, web_app=WebAppInfo(url=url))
+    return InlineKeyboardButton(label, callback_data="adm:stats")
+
+
 def panel() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📋 Записи сьогодні", callback_data="adm:appts:0"),
          InlineKeyboardButton("📋 Завтра", callback_data="adm:appts:1")],
         [InlineKeyboardButton("🕳 Вікна сьогодні", callback_data="adm:free:0"),
          InlineKeyboardButton("🕳 Завтра", callback_data="adm:free:1")],
-        [InlineKeyboardButton("📊 Статистика", callback_data="adm:stats"),
-         InlineKeyboardButton("☀️ Дайджест", callback_data="adm:digest")],
-        [InlineKeyboardButton("👥 Команда", callback_data="adm:team")],
+        [dashboard_button(), InlineKeyboardButton("☀️ Дайджест", callback_data="adm:digest")],
+        [InlineKeyboardButton("📈 Коротко в чаті", callback_data="adm:stats"),
+         InlineKeyboardButton("👥 Команда", callback_data="adm:team")],
     ])
 
 
@@ -58,8 +70,7 @@ def _day_title(d: date) -> str:
     return "%s, %s" % (T.WEEKDAYS[d.weekday()], d.strftime("%d.%m"))
 
 
-def _via_bot(a) -> bool:
-    return (a.api_id or "").startswith("tg-") or "Telegram" in (a.comment or "")
+_via_bot = analytics.via_bot
 
 
 def _clip(text: str) -> str:
@@ -200,31 +211,40 @@ def _chat_counts(now=None) -> Dict[str, int]:
     return {"total": total, "day": today, "week": week}
 
 
-def stats_text() -> str:
+def _arrow(cur, prev) -> str:
+    d = analytics.delta(cur, prev)
+    return (" " + ("▲" + d[1:] if d.startswith("+") else "▼" + d[1:])) if d else ""
+
+
+async def stats_text(client, locations: Dict[int, str], now: datetime) -> str:
+    """A short summary for the chat; the full picture is the dashboard."""
     import stats as arcade_stats  # api/stats.py
-    ev = _event_counts()
-    chats = _chat_counts()
-    games = arcade_stats.collect()
-    labels = (("booked", "записи"), ("moved", "переноси"), ("cancelled", "скасування"), ("reminded", "нагадування"))
-    lines = ["📊 Статистика · %s" % games["today"], "", "🤖 Бот — сьогодні · 7 днів · місяць · всього"]
-    for key, label in labels:
-        c = ev[key]
-        lines.append("  %s: %d · %d · %d · %d" % (label, c["today"], c["week"], c["month"], c["all"]))
-    lines += ["", "👥 Клієнти бота: %d (активні сьогодні: %d, за 7 днів: %d)" % (chats["total"], chats["day"], chats["week"])]
+    title = _day_title(now.date())
+    lines = ["📊 Коротко · %s" % title, ""]
+    if client is not None:
+        try:
+            rep = await analytics.report(client, locations, "month", now)
+            c, p = rep["current"]["totals"], rep["previous"]["totals"]
+            lines += ["💈 Цей місяць (порівняно з тими ж днями минулого)",
+                      "Візитів %d%s · виручка %s%s" % (c["visits"], _arrow(c["visits"], p["visits"]),
+                                                       analytics.money(c["revenue"]), _arrow(c["revenue"], p["revenue"])),
+                      "Середній чек %s · клієнтів %d · не прийшли %d" % (analytics.money(c["avg_check"]), c["clients"], c["no_show"]),
+                      "Наступні 7 днів: %d записів" % rep["upcoming"]["count"]]
+            top = rep["current"]["barbers"][:3]
+            if top:
+                lines.append("Топ: " + " · ".join("%s %d" % (b["name"].split()[0], b["visits"]) for b in top))
+            lines.append("")
+        except AltegioError as e:
+            logger.warning("stats bookings: %s", e)
+            lines += ["💈 Altegio зараз не відповідає", ""]
+    ev, chats, games = await asyncio.to_thread(lambda: (_event_counts(), _chat_counts(), arcade_stats.collect()))
+    lines.append("🤖 Бот за місяць: записів %d · переносів %d · скасувань %d"
+                 % (ev["booked"]["month"], ev["moved"]["month"], ev["cancelled"]["month"]))
+    lines.append("👥 Клієнтів у боті: %d (за 7 днів активні %d)" % (chats["total"], chats["week"]))
     g = games["games"]
-    lines += ["", "🎮 Ігри — партії сьогодні · місяць · всього"]
-    for gid, name in GAME_NAMES.items():
-        x = g.get(gid) or {}
-        p = x.get("plays", {})
-        best = x.get("best_month")
-        lines.append("  %s: %d · %d · %d | гравців міс.: %s%s" % (
-            name, p.get("today", 0), p.get("month", 0), p.get("all", 0), x.get("players", {}).get("month", 0),
-            " | рекорд: %d" % best if best else ""))
-    guests = sum((g.get(gid) or {}).get("guest", {}).get("month", 0) for gid in GAME_NAMES)
-    hub = (g.get("hub") or {}).get("opens", {})
-    lines.append("  без рейтингу (стара кнопка) за місяць: %d" % guests)
-    lines.append("  хаб відкривали: сьогодні %d · місяць %d" % (hub.get("today", 0), hub.get("month", 0)))
-    lines += ["", "Детальніше по днях: /stats.html (ключ персоналу)"]
+    plays = sum(((g.get(k) or {}).get("plays") or {}).get("month", 0) for k in GAME_NAMES)
+    lines.append("🎮 Ігри за місяць: %d партій · хаб відкривали %d" % (plays, ((g.get("hub") or {}).get("opens") or {}).get("month", 0)))
+    lines += ["", "Графіки, майстри, послуги й години — у дашборді 👇"]
     return "\n".join(lines)
 
 
@@ -248,6 +268,15 @@ async def digest_text(client, locations: Dict[int, str], now: datetime) -> str:
     title = _day_title(today)
     lines = ["☀️ Доброго ранку! %s" % (title[:1].upper() + title[1:]),
              "📋 Записів сьогодні: %d (через бот: %d)" % (total, via_bot)]
+    try:
+        yday = today - timedelta(days=1)
+        recs = await analytics.records(client, list(locations), yday, yday, today)
+        t = analytics.summarize(recs, yday, yday, now)["totals"]
+        if t["booked"]:
+            lines.append("💈 Вчора: візитів %d · %s%s" % (t["visits"], analytics.money(t["revenue"]),
+                                                    " · не прийшли %d" % t["no_show"] if t["no_show"] else ""))
+    except AltegioError as e:
+        logger.warning("digest yesterday: %s", e)
     if y:
         lines.append("🤖 Вчора через бот: записів %d · переносів %d · скасувань %d"
                      % (y["booked"], y["moved"], y["cancelled"]))
@@ -269,6 +298,10 @@ async def digest_text(client, locations: Dict[int, str], now: datetime) -> str:
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not is_admin(update):
+        import team  # team imports this module
+        if await team.staff_for_chat(update.effective_chat.id) is not None:
+            await team.send_staff_panel(update.effective_chat)
+            return
         await update.effective_chat.send_message(T.FALLBACK, reply_markup=context.application.bot_data.get("main_menu"))
         return
     await update.effective_chat.send_message("🛠 Адмін-панель Custom True", reply_markup=panel())
@@ -285,7 +318,7 @@ async def on_admin_button(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await q.answer("⏳")
     try:
         if parts[1] == "stats":
-            text = await asyncio.to_thread(stats_text)
+            text = await stats_text(client, locations, datetime.now(client.tz) if client else _games.kyiv_now())
         elif parts[1] == "digest" and client is not None:
             text = await digest_text(client, locations, datetime.now(client.tz))
         elif client is None:

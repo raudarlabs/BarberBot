@@ -20,6 +20,10 @@ import texts as T  # noqa: E402
 from altegio_fixture import fixture_client  # noqa: E402
 from fakes import FakeChat, FakeContext, FakeMessage, FakeQuery, FakeUpdate, buttons  # noqa: E402
 
+
+def buttons_of(markup):
+    return [b for row in markup.inline_keyboard for b in row]
+
 TZ = ZoneInfo("Europe/Kyiv")
 LOC, IGOR, VIKTOR = 297851, 875690, 2106676
 LOCATIONS = {LOC: "вул. Володимира Великого, 75"}
@@ -76,7 +80,7 @@ class TeamTests(unittest.IsolatedAsyncioTestCase):
         token, chat = await self.link_igor()
         self.assertIn("Вітаю, Ігор Халай", chat.sent[-1][0])
         self.assertEqual((await team.members())[IGOR]["chat"], BARBER)
-        self.assertEqual(self.bot.commands[-1], (BARBER, ["start", "book", "me"]))
+        self.assertEqual(self.bot.commands[-1], (BARBER, ["start", "book", "admin"]))
         # the same link again: refused
         other = FakeChat(888)
         self.ctx.args = ["team_" + token]
@@ -109,6 +113,36 @@ class TeamTests(unittest.IsolatedAsyncioTestCase):
         await team.on_me_button(FakeUpdate(FakeChat(BARBER), BARBER, query=q), self.ctx)
         self.assertIn("💈 Ігор Халай", q.edits[-1][0])
         self.assertNotIn("Віктор", q.edits[-1][0])
+
+    async def test_barber_admin_opens_his_own_panel(self):
+        import admin
+        await self.link_igor()
+        chat = FakeChat(BARBER)
+        await admin.admin_command(FakeUpdate(chat, BARBER, message=FakeMessage(chat)), self.ctx)
+        self.assertIn("панель майстра", chat.sent[-1][0])
+        datas = [b.callback_data for b in buttons_of(chat.sent[-1][1])]
+        self.assertIn("tm:day", datas)
+        self.assertFalse(any(d and d.startswith("adm:") for d in datas))
+        b = self.client.backend
+        today = datetime.now(TZ).date()
+        while today.weekday() == 6:  # the fixture works Mon–Sat
+            today += timedelta(days=1)
+        now = datetime(today.year, today.month, today.day, 8, tzinfo=TZ)
+        b.add_appointment(LOC, IGOR, now.replace(hour=11), phone="+380671234567", name="Тарас",
+                          services=[{"id": 1, "title": "Чоловіча стрижка"}])
+        b.add_appointment(LOC, VIKTOR, now.replace(hour=12), phone="+380501112233", name="Олена")
+        text = await team.staff_day_text(self.client, LOCATIONS, IGOR, now, greet=True)
+        self.assertIn("Доброго ранку", text)
+        self.assertIn("11:00 · Тарас · Чоловіча стрижка", text)
+        self.assertNotIn("Олена", text)
+        self.assertIn("Вільні вікна", text)
+
+    async def test_commands_refresh_once(self):
+        await self.link_igor()
+        self.bot.commands.clear()
+        self.assertEqual(await team.refresh_commands(self.bot), 1)
+        self.assertEqual(self.bot.commands, [(BARBER, ["start", "book", "admin"])])
+        self.assertEqual(await team.refresh_commands(self.bot), 0)
 
     async def test_admin_can_disconnect(self):
         await self.link_igor()

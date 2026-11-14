@@ -108,10 +108,11 @@ class AdminPanelTests(unittest.IsolatedAsyncioTestCase):
         await admin_notify.count_event("cancelled")
         await admin_notify.count_event("reminded", 3)
         text, _ = (await self.press("adm:stats")).edits[-1]
-        self.assertIn("записи: 1 · 1 · 1 · 1", text)
-        self.assertIn("нагадування: 3 · 3 · 3 · 3", text)
-        self.assertIn("Фен-пілот", text)
-        self.assertIn("Клієнти бота", text)
+        self.assertIn("Бот за місяць: записів 1 · переносів 0 · скасувань 1", text)
+        self.assertIn("Цей місяць", text)
+        self.assertIn("Наступні 7 днів: 2 записів", text)
+        self.assertIn("Клієнтів у боті", text)
+        self.assertIn("Ігри за місяць", text)
 
     async def test_morning_digest(self):
         now = datetime.combine(self.tomorrow, datetime.min.time(), TZ).replace(hour=9)
@@ -178,7 +179,7 @@ class DigestCronTests(unittest.TestCase):
                 with mock.patch.object(cron_digest._games, "kyiv_now", lambda ts=None: datetime(2026, 11, 16, 8, 0)):
                     self.assertIn("skipped", await cron_digest.run_once())
                 with mock.patch.object(cron_digest._games, "kyiv_now", lambda ts=None: datetime(2026, 11, 16, 9, 0)):
-                    self.assertEqual(await cron_digest.run_once(), {"ok": True, "sent": 2})
+                    self.assertEqual(await cron_digest.run_once(), {"ok": True, "sent": 2, "staff_sent": 0})
                     self.assertEqual((await cron_digest.run_once())["skipped"], "already sent today")
             loop = asyncio.new_event_loop()
             try:

@@ -24,6 +24,18 @@ def arcade_webapp_url(env=None) -> str:
 # Arcade Mini App (public/index.html on Vercel)
 ARCADE_WEBAPP_URL = arcade_webapp_url()
 
+
+def dashboard_url(env=None) -> str:
+    """The shop dashboard (public/stats.html) next to the arcade; '' when that is not an https site
+    (Telegram opens Mini Apps only over https)."""
+    from urllib.parse import urlsplit, urlunsplit
+    env = os.environ if env is None else env
+    url = env.get("DASHBOARD_URL") or ""
+    if not url:
+        parts = urlsplit(arcade_webapp_url(env))
+        url = urlunsplit((parts.scheme, parts.netloc, "/stats.html", "", ""))
+    return url if url.startswith("https://") and "yourdomain.com" not in url else ""
+
 # xAI / Grok API settings
 XAI_BASE_URL = "https://api.x.ai/v1"
 VISION_MODEL = "grok-4-1-fast-non-reasoning"

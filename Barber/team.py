@@ -4,8 +4,9 @@ The team (barbers) in the bot.
 - Admin: /admin → 👥 Команда → per barber "➕ Запросити" gives a one-time invite link
   t.me/<bot>?start=team_<token> (7 days) to forward to the barber; "🗑 Відключити" unlinks.
   (A bot cannot look people up by phone number, so linking goes through the barber's own tap.)
-- Barber: opens the link → linked to his Altegio team member; /me shows his schedule and free
-  windows for today / tomorrow.
+- Barber: opens the link → linked to his Altegio team member. /admin (and /me) opens his own panel:
+  his visits and free windows for today / tomorrow, "Мій день", and the dashboard Mini App with
+  only his numbers. At 9:00 he gets his day (api/cron_digest.py).
 - Notifications to the barber about his clients: new booking, moved visit, cancellation —
   right away for actions made through the bot, and from any source (admin, phone, widget)
   by comparing Altegio's next 48 hours every 10 minutes (sync_changes, run by the cron).
@@ -42,6 +43,7 @@ TEAM_CHAT = "bb:team_chat"  # hash: chat_id -> staff_id
 INVITE = "bb:invite:"       # + token -> staff_id, 7 days
 SNAP = "bb:snap:"           # + location -> {appointment_id: [staff_id, start, client, phone, service]}
 MARK = "bb:tn:"             # + appointment:event:start -> "1" (notified once)
+COMMANDS_MARK = "bb:cmds:v2"  # bump to re-send every barber's command list once (cron)
 INVITE_TTL = 7 * 86400
 MARK_TTL = 4 * 86400
 WINDOW = timedelta(hours=48)
@@ -243,24 +245,73 @@ async def _edit(q, update, text, markup):
 
 # ------------------------------------------------------------------ barber: link + /me
 
+STAFF_PANEL_TITLE = "💈 Ваша панель майстра Custom True\nЗаписи, вільні вікна й статистика — тільки ваші."
+
+
 def me_panel() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🗓 Мій графік сьогодні", callback_data="tm:appts:0"),
-         InlineKeyboardButton("🗓 Завтра", callback_data="tm:appts:1")],
+        [InlineKeyboardButton("📋 Мої записи сьогодні", callback_data="tm:appts:0"),
+         InlineKeyboardButton("📋 Завтра", callback_data="tm:appts:1")],
         [InlineKeyboardButton("🕳 Мої вікна сьогодні", callback_data="tm:free:0"),
          InlineKeyboardButton("🕳 Завтра", callback_data="tm:free:1")],
+        [admin.dashboard_button("📊 Моя статистика"), InlineKeyboardButton("☀️ Мій день", callback_data="tm:day")],
     ])
 
 
-async def _set_commands(bot, chat_id: int, is_admin: bool) -> None:
-    cmds = [BotCommand("start", "Головне меню"), BotCommand("book", "Записатися"),
-            BotCommand("me", "Мій графік і вікна")]
+async def send_staff_panel(chat) -> None:
+    await chat.send_message(STAFF_PANEL_TITLE, reply_markup=me_panel())
+
+
+def _commands(is_admin: bool) -> list:
+    cmds = [BotCommand("start", "Головне меню"), BotCommand("book", "Записатися")]
     if is_admin:
-        cmds.append(BotCommand("admin", "Адмін-панель: записи, вікна, статистика"))
+        return cmds + [BotCommand("admin", "Адмін-панель: записи, вікна, дашборд"),
+                       BotCommand("me", "Мій графік як майстра")]
+    return cmds + [BotCommand("admin", "Мій графік, вікна, статистика")]
+
+
+async def _set_commands(bot, chat_id: int, is_admin: bool) -> None:
     try:
-        await bot.set_my_commands(cmds, scope=BotCommandScopeChat(chat_id))
+        await bot.set_my_commands(_commands(is_admin), scope=BotCommandScopeChat(chat_id))
     except TelegramError as e:
         logger.warning("set commands for %s: %s", chat_id, e)
+
+
+async def refresh_commands(bot) -> int:
+    """Once per COMMANDS_MARK: re-send the command list to every linked barber (after it changes)."""
+    if (await _kvs(["SET", COMMANDS_MARK, "1", "NX"]))[0] is None:
+        return 0
+    ids = admin_notify.admin_chat_ids()
+    team = await members()
+    for m in team.values():
+        await _set_commands(bot, int(m["chat"]), int(m["chat"]) in ids)
+    return len(team)
+
+
+async def staff_day_text(client, locations: Dict[int, str], sid: int, now: datetime,
+                         greet: bool = False) -> Optional[str]:
+    """The barber's day: his visits and free windows. None on his day off with nothing booked."""
+    today = now.date()
+    appts, windows, working = [], [], False
+    for loc in locations:
+        appts += [a for a in await admin.day_appointments(client, loc, today) if a.staff_id == sid]
+        staff = [s for s in await client.list_staff(loc) if s.id == sid]
+        for _, ranges in await admin.free_windows(client, loc, today, staff=staff, now=now):
+            working = working or ranges is not None
+            windows += ranges or []
+    if not appts and not working:
+        return None
+    title = admin._day_title(today)
+    title = title[:1].upper() + title[1:]
+    lines = [("☀️ Доброго ранку! %s" if greet else "☀️ Ваш день · %s") % title,
+             "📋 Записів: %d" % len(appts)]
+    for a in appts:
+        lines.append("  %s · %s · %s%s" % (a.start.strftime("%H:%M"), a.client_name or "—",
+                                           a.service_titles or "—", " 🤖" if admin._via_bot(a) else ""))
+    lines += ["", "🕳 Вільні вікна: " + (", ".join("%s–%s" % r for r in windows) if windows else "немає 💪")]
+    if greet:
+        lines += ["", "/admin — графік, вікна, статистика"]
+    return admin._clip("\n".join(lines))
 
 
 async def team_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -284,7 +335,8 @@ async def team_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await _set_commands(context.bot, chat.id, admin.is_admin(update))
     await chat.send_message(
         "Вітаю%s! 💈 Тепер ви в команді Custom True у цьому боті.\n\n"
-        "• /me — ваш графік і вільні вікна на сьогодні й завтра\n"
+        "• /admin — ваші записи, вільні вікна й статистика\n"
+        "• щоранку о 9:00 — ваш день\n"
         "• сповіщення про нові записи, перенесення й скасування ваших клієнтів приходитимуть сюди"
         % (", " + name if name else ""), reply_markup=me_panel())
 
@@ -293,7 +345,7 @@ async def me_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if await staff_for_chat(update.effective_chat.id) is None:
         await update.effective_chat.send_message(T.FALLBACK, reply_markup=context.application.bot_data.get("main_menu"))
         return
-    await update.effective_chat.send_message("🗓 Ваш графік", reply_markup=me_panel())
+    await send_staff_panel(update.effective_chat)
 
 
 async def on_me_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -304,15 +356,19 @@ async def on_me_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
     bd = context.application.bot_data
     client, locations = bd.get("altegio"), bd.get("locations") or {}
-    _, what, offset = q.data.split(":")
+    parts = q.data.split(":")
     await q.answer("⏳")
     if client is None:
         text = T.UNAVAILABLE
     else:
         try:
-            day = datetime.now(client.tz).date() + timedelta(days=int(offset))
-            fn = admin.appointments_text if what == "appts" else admin.free_windows_text
-            text = await fn(client, locations, day, staff_id=sid)
+            if parts[1] == "day":
+                text = await staff_day_text(client, locations, sid, datetime.now(client.tz)) \
+                    or "🌙 Сьогодні у вас вихідний"
+            else:
+                day = datetime.now(client.tz).date() + timedelta(days=int(parts[2]))
+                fn = admin.appointments_text if parts[1] == "appts" else admin.free_windows_text
+                text = await fn(client, locations, day, staff_id=sid)
         except AltegioError as e:
             logger.warning("me %s: %s", q.data, e)
             text = T.API_ERROR
@@ -324,5 +380,5 @@ def handlers():
         CommandHandler("start", team_start, filters=filters.Regex(r"^/start team_")),
         CommandHandler("me", me_command),
         CallbackQueryHandler(on_team_admin, pattern=r"^adm:(team|panel|tinv:\d+|tdel:\d+)$"),
-        CallbackQueryHandler(on_me_button, pattern=r"^tm:(appts|free):[01]$"),
+        CallbackQueryHandler(on_me_button, pattern=r"^tm:((appts|free):[01]|day)$"),
     ]

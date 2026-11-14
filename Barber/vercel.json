@@ -9,6 +9,9 @@
     },
     "api/cron_digest.py": {
       "maxDuration": 120
+    },
+    "api/dashboard.py": {
+      "maxDuration": 300
     }
   },
   "headers": [

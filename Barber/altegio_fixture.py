@@ -43,7 +43,8 @@ class FixtureBackend:
     # -- test helpers
 
     def add_appointment(self, location_id, staff_id, start: datetime, duration=3600,
-                        phone="", name="", attendance=0, deleted=False, services=None, client_id=None):
+                        phone="", name="", attendance=0, deleted=False, services=None, client_id=None,
+                        online=False, api_id="", comment=""):
         appt_id = self._next_id
         self._next_id += 1
         cid = client_id if client_id is not None else (appt_id + 5000 if phone else 0)
@@ -59,6 +60,9 @@ class FixtureBackend:
             "deleted": deleted,
             "client_id": cid,
             "services": services or [],
+            "online": online,
+            "api_id": api_id,
+            "comment": comment,
         }
         return appt_id
 

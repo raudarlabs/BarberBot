@@ -97,6 +97,7 @@ class Appointment:
     services: List[dict] = field(default_factory=list)  # [{"id", "title", "cost", "first_cost", "discount"}]
     comment: str = ""
     api_id: str = ""
+    online: bool = False  # booked by the client through Altegio's online booking (widget / site)
 
     @property
     def end(self) -> datetime:
@@ -312,6 +313,7 @@ def parse_appointment(raw, location_id: int, tz: ZoneInfo, included: Optional[di
         services=services,
         comment=str(a.get("comment") or ""),
         api_id=str(a.get("api_id") or a.get("external_id") or ""),
+        online=_truthy(a.get("online")),
     )
 
 
@@ -344,8 +346,10 @@ class HttpAltegioClient:
 
     def __init__(self, partner_token: str, user_token: str, base_url: str = DEFAULT_BASE_URL,
                  tz: str = DEFAULT_TZ, transport: Optional[httpx.AsyncBaseTransport] = None,
-                 min_interval: float = 0.22, is_mock: bool = False):
+                 min_interval: float = 0.22, is_mock: bool = False, hidden_staff: Iterable[int] = ()):
         self.tz = ZoneInfo(tz)
+        # Barbers still active in Altegio but no longer working at the shop (not offered anywhere).
+        self.hidden_staff = set(int(x) for x in hidden_staff)
         self.is_mock = is_mock
         self._min_interval = min_interval  # Altegio allows 5 req/s per IP
         self._last = 0.0
@@ -393,7 +397,7 @@ class HttpAltegioClient:
             params={"filter[deleted]": 0, "filter[fired]": 0},
         )
         # Keep Altegio's order: it is the order the shop set for its online booking page.
-        return [s for s in (parse_staff(x) for x in _as_list(data)) if s]
+        return [s for s in (parse_staff(x) for x in _as_list(data)) if s and s.id not in self.hidden_staff]
 
     async def list_services(self, location_id: int, staff_id: int) -> List[Service]:
         # The catalog names the filter `team_member_id`; legacy endpoints call it `staff_id`.
@@ -588,6 +592,16 @@ class HttpAltegioClient:
         return normalize_phone(_flatten(data).get("phone", ""))
 
 
+# Left the shop but still active in Altegio (Nov 2026): Нікіта Василенко. ALTEGIO_HIDE_STAFF overrides.
+DEFAULT_HIDDEN_STAFF = "2222418"
+
+
+def hidden_staff(env=None) -> List[int]:
+    env = os.environ if env is None else env
+    raw = env.get("ALTEGIO_HIDE_STAFF", DEFAULT_HIDDEN_STAFF)
+    return [int(x) for x in raw.replace(";", ",").split(",") if x.strip().isdigit()]
+
+
 def make_client(env=None) -> Optional[HttpAltegioClient]:
     """
     Real client when both tokens are set; the recorded fixture when ALTEGIO_MOCK=1;
@@ -597,7 +611,8 @@ def make_client(env=None) -> Optional[HttpAltegioClient]:
     tz = env.get("ALTEGIO_TZ", DEFAULT_TZ)
     partner, user = env.get("ALTEGIO_PARTNER_TOKEN"), env.get("ALTEGIO_USER_TOKEN")
     if partner and user:
-        return HttpAltegioClient(partner, user, env.get("ALTEGIO_BASE_URL", DEFAULT_BASE_URL), tz)
+        return HttpAltegioClient(partner, user, env.get("ALTEGIO_BASE_URL", DEFAULT_BASE_URL), tz,
+                                 hidden_staff=hidden_staff(env))
     if env.get("ALTEGIO_MOCK") == "1":
         from altegio_fixture import fixture_client
         logger.warning("ALTEGIO_MOCK=1: booking runs against the recorded fixture, nothing reaches Altegio")

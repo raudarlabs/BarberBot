@@ -52,6 +52,12 @@ async def run_once() -> dict:
             except Exception:
                 logger.exception("team sync failed")
                 out["team_notified"] = "error"
+            try:
+                refreshed = await team.refresh_commands(app.bot)
+                if refreshed:
+                    out["team_commands"] = refreshed
+            except Exception:
+                logger.exception("team commands refresh failed")
         finally:
             await client.aclose()
     logger.info("cron: %s", out)

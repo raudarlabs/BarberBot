@@ -51,6 +51,8 @@ logging.basicConfig(
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
+# httpx logs every request URL at INFO, and Telegram's URLs contain the bot token: keep it out of the logs.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # Bottom menu: Записатися · Мій запис / Підібрати стрижку · Ігри / Послуги й ціни · Контакти.
 # "🎮 Ігри" answers with INLINE web_app buttons (menu.games_markup), never a reply-keyboard
