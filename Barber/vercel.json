@@ -1,8 +1,36 @@
 {
-  "builds": [
-    { "src": "api/*.py", "use": "@vercel/python" }
+  "outputDirectory": "public",
+  "headers": [
+    {
+      "source": "/(.*)\\.(js|css|html)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
+      ]
+    }
   ],
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1" }
+  "redirects": [
+    {
+      "source": "/snake",
+      "destination": "/?game=snake",
+      "permanent": false
+    },
+    {
+      "source": "/snake_app.html",
+      "destination": "/?game=snake",
+      "permanent": false
+    },
+    {
+      "source": "/tetris",
+      "destination": "/?game=blocks",
+      "permanent": false
+    },
+    {
+      "source": "/tetris_app.html",
+      "destination": "/?game=blocks",
+      "permanent": false
+    }
   ]
 }
