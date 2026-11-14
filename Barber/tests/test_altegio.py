@@ -175,7 +175,9 @@ class FixtureClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((a.id, a.status, a.client_phone, a.service_titles),
                          (appt_id, "waiting", "380501112233", "Чоловіча стрижка"))
         params = self.backend.requests[-1][2]
-        self.assertEqual(params["filter[date_intersect_from]"], (start - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S"))
+        # Real API: whole-day start_date/end_date; filter[...] is ignored there (checked on prod)
+        self.assertEqual(params["start_date"], (start - timedelta(hours=1)).date().isoformat())
+        self.assertNotIn("filter[date_intersect_from]", params)
 
         await self.client.confirm_appointment(297851, appt_id)
         self.assertEqual((await self.client.get_appointment(297851, appt_id)).status, "confirmed")

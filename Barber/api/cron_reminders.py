@@ -30,6 +30,8 @@ logger = logging.getLogger("cron_reminders")
 
 
 async def run_once() -> dict:
+    if os.environ.get("REMINDERS_ENABLED") != "1":
+        return {"ok": True, "sent": 0, "skipped": "disabled (set REMINDERS_ENABLED=1)"}
     app = Application.builder().token(bot.TELEGRAM_BOT_TOKEN).job_queue(None).build()
     async with app:
         bot.prepare(app)

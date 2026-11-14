@@ -10,7 +10,7 @@ Contracts come from the Altegio API catalog (base https://api.alteg.io/api/v1):
     GET  /locations/{loc}/services?staff_id=               a barber's services (JSON:API)
     GET  /timetable/dates/{loc}/{date}?staff_id=           working dates
     GET  /timetable/seances/{loc}/{staff}/{date}           5-minute grid: [{time, is_free}]
-    GET  /locations/{loc}/appointments                     filter[date_intersect_from|to], include=client
+    GET  /locations/{loc}/appointments                     start_date, end_date (days), include=client
     GET  /locations/{loc}/appointments/{id}
     POST /locations/{loc}/appointments                     create (staff_id, services, client, datetime, seance_length)
     PUT  /locations/{loc}/appointments/{id}                full update (used to move the time)
@@ -218,8 +218,8 @@ def parse_staff(raw) -> Optional[Staff]:
     fired = s.get("fired", s.get("dismissed"))
     if _truthy(hidden) or _truthy(fired) or _truthy(s.get("is_deleted", s.get("deleted"))):
         return None
-    if "bookable" in s and not _truthy(s["bookable"]):
-        return None
+    # Note: the staff list's `bookable` is false for everyone on the real API (it depends on the
+    # booking context), so it is not a visibility flag; `hidden` / `fired` are.
     return Staff(id=_int(s["id"]), name=str(s.get("name", "")).strip(),
                  specialization=str(s.get("specialization", "") or ""))
 
@@ -437,7 +437,8 @@ class HttpAltegioClient:
                                  comment: str = "", api_id: str = "") -> Appointment:
         services = list(services)
         body = {
-            "staff_id": staff_id,
+            "staff_id": staff_id,          # legacy name the REST API uses...
+            "team_member_id": staff_id,    # ...and the catalog's name; send both
             "services": [{"id": s.id} for s in services],
             "client": {"phone": "+" + normalize_phone(phone), "name": name or "Telegram"},
             "datetime": start.astimezone(self.tz).isoformat(),
@@ -458,18 +459,21 @@ class HttpAltegioClient:
 
     async def list_appointments(self, location_id: int, start: datetime, end: datetime,
                                 client_id: Optional[int] = None) -> List[Appointment]:
-        fmt = "%Y-%m-%dT%H:%M:%S"
+        # The real API filters by whole days (start_date/end_date, inclusive); `filter[...]` params
+        # are ignored there and the full history (tens of thousands) comes back. Exact times are
+        # filtered below.
+        lo, hi = start.astimezone(self.tz), end.astimezone(self.tz)
         out, seen, page, page_size = [], set(), 1, None
         while page <= 50:
             params = {
-                "filter[date_intersect_from]": start.astimezone(self.tz).strftime(fmt),
-                "filter[date_intersect_to]": end.astimezone(self.tz).strftime(fmt),
+                "start_date": lo.date().isoformat(),
+                "end_date": hi.date().isoformat(),
                 "include": "client",
                 "page": page,
-                "limit": 100,
+                "count": 100,
             }
             if client_id:
-                params["filter[client_id]"] = client_id
+                params["client_id"] = client_id
             data, included = await self._request("GET", "/locations/%d/appointments" % location_id, params=params)
             index = {(str(i.get("type")), str(i.get("id"))): i for i in included if isinstance(i, dict)}
             items = _as_list(data)
@@ -486,7 +490,7 @@ class HttpAltegioClient:
             page += 1
         else:
             logger.warning("list_appointments: stopped after 50 pages for location %s", location_id)
-        return out
+        return [a for a in out if a.start < hi and a.start + timedelta(seconds=a.duration or 0) > lo]
 
     async def get_appointment(self, location_id: int, appointment_id: int) -> Appointment:
         data, included = await self._request(
@@ -515,6 +519,7 @@ class HttpAltegioClient:
             services.append(item)
         body = {
             "staff_id": appt.staff_id,
+            "team_member_id": appt.staff_id,
             "services": services,
             "client": {"id": appt.client_id} if appt.client_id else
                       {"phone": "+" + appt.client_phone, "name": appt.client_name},

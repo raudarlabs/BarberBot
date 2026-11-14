@@ -124,7 +124,7 @@ class MenuScreenTests(unittest.IsolatedAsyncioTestCase):
         # Second time: the learned client id narrows the query server-side.
         await menu.dispatch(self.text_update(T.MENU_VISITS), self.ctx)
         params = [r[2] for r in self.client.backend.requests if r[1].endswith("/appointments")][-1]
-        self.assertIn("filter[client_id]", params)
+        self.assertIn("client_id", params)
 
     async def test_no_visits_offers_booking(self):
         await self.links.link(USER, "380671234567")

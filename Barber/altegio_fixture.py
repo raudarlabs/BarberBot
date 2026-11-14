@@ -150,22 +150,23 @@ class FixtureBackend:
                                              if a["client_id"] else None}}}
 
     def _list_appointments(self, params, body, loc):
-        lo = datetime.fromisoformat(params["filter[date_intersect_from]"]).replace(tzinfo=self.tz)
-        hi = datetime.fromisoformat(params["filter[date_intersect_to]"]).replace(tzinfo=self.tz)
+        # Like the real API: whole days from start_date..end_date (inclusive); `filter[...]` is
+        # NOT supported there (it is silently ignored and the full history comes back).
+        lo_day, hi_day = params.get("start_date"), params.get("end_date")
         rows, included = [], []
         for a in self.appointments.values():
             if a["_loc"] != int(loc) or a["deleted"]:
                 continue
-            if params.get("filter[client_id]") and str(a["client_id"]) != params["filter[client_id]"]:
+            if params.get("client_id") and str(a["client_id"]) != params["client_id"]:
                 continue
-            s = datetime.fromisoformat(a["datetime"])
-            if s < hi and s + timedelta(seconds=a["seance_length"]) > lo:
+            day = a["datetime"][:10]
+            if (not lo_day or day >= lo_day) and (not hi_day or day <= hi_day):
                 rows.append(self._wire(a))
                 c = self.clients.get((int(loc), a["client_id"]))
                 if c and "client" in params.get("include", ""):
                     included.append({"type": "client", "id": str(c["id"]),
                                      "attributes": {"name": c["name"], "phone": c["phone"]}})
-        page, limit = int(params.get("page", 1)), int(params.get("limit", 50))
+        page, limit = int(params.get("page", 1)), int(params.get("count", params.get("limit", 50)))
         limit = min(limit, self.page_cap or limit)
         return self._ok(rows[(page - 1) * limit: page * limit], included=included)
 
