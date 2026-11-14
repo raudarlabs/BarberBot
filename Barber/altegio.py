@@ -317,6 +317,54 @@ def parse_appointment(raw, location_id: int, tz: ZoneInfo, included: Optional[di
     )
 
 
+def _num(v) -> float:
+    if isinstance(v, (int, float)):
+        return float(v)
+    try:
+        return float(str(v or 0).replace(" ", "").replace("\u00a0", "").replace(",", "."))
+    except ValueError:
+        return 0.0
+
+
+def parse_transaction(raw, tz: ZoneInfo) -> Optional[dict]:
+    """A money movement: {"id", "d": local day, "a": signed amount, "c": payment item id (0 = transfer
+    between accounts), "cat": item title, "acc": account id, "m": team member id, "goods": bool}."""
+    t = _flatten(raw)
+    if not t.get("id"):
+        return None
+    when = _parse_local(t.get("date"), tz)
+    if when is None:
+        return None
+    exp = t.get("expense") if isinstance(t.get("expense"), dict) else {}
+    acc = t.get("account") if isinstance(t.get("account"), dict) else {}
+    master = t.get("master") if isinstance(t.get("master"), dict) else {}
+    return {"id": _int(t["id"]), "d": when.date().isoformat(), "a": round(_num(t.get("amount")), 2),
+            "c": _int(exp.get("id")), "cat": str(exp.get("title") or ""), "acc": _int(acc.get("id")),
+            "m": _int(master.get("id")), "goods": t.get("sold_item_type") == "goods_transaction"}
+
+
+def parse_overall(data) -> dict:
+    d = data if isinstance(data, dict) else {}
+
+    def money(k):
+        return round(_num((d.get(k) or {}).get("current_sum")), 2)
+
+    rec, cl, full = d.get("record_stats") or {}, d.get("client_stats") or {}, d.get("fullness_stats") or {}
+    return {
+        "income_total": money("income_total_stats"), "income_services": money("income_services_stats"),
+        "income_goods": money("income_goods_stats"), "avg_check": money("income_average_stats"),
+        "avg_services_check": money("income_average_services_stats"),
+        "occupancy": round(_num(full.get("current_percent")), 1),
+        "records": _int(rec.get("current_total_count")), "completed": _int(rec.get("current_completed_count")),
+        "pending": _int(rec.get("current_pending_count")), "cancelled": _int(rec.get("current_canceled_count")),
+        "cancelled_percent": _int(rec.get("current_canceled_percent")),
+        "clients_total": _int(cl.get("total_count")), "new_clients": _int(cl.get("new_count")),
+        "new_percent": _int(cl.get("new_percent")), "returning": _int(cl.get("return_count")),
+        "return_percent": _int(cl.get("return_percent")), "active_clients": _int(cl.get("active_count")),
+        "lost_clients": _int(cl.get("lost_count")), "lost_percent": _int(cl.get("lost_percent")),
+    }
+
+
 def _unwrap(payload):
     """{success, data, meta} / {data, meta} / bare -> (data, included)."""
     if isinstance(payload, dict):
@@ -536,6 +584,41 @@ class HttpAltegioClient:
         else:
             logger.warning("list_appointments: stopped after 50 pages for location %s", location_id)
         return [a for a in out if a.start < hi and a.start + timedelta(seconds=a.duration or 0) > lo]
+
+    # -- finance and analytics (read-only; for the admin dashboard)
+
+    async def list_transactions(self, location_id: int, start: date, end: date) -> List[dict]:
+        """Money in and out from `start` to `end` (inclusive days), see parse_transaction."""
+        out, seen, page = [], set(), 1
+        while page <= 50:
+            data, _ = await self._request("GET", "/transactions/%d" % location_id, params={
+                "start_date": start.isoformat(), "end_date": end.isoformat(), "page": page, "count": 1000})
+            items = _as_list(data)
+            fresh = [t for t in (parse_transaction(x, self.tz) for x in items) if t and t["id"] not in seen]
+            if not fresh:
+                break
+            seen.update(t["id"] for t in fresh)
+            out += fresh
+            if len(items) < 1000:
+                break
+            page += 1
+        return [t for t in out if start.isoformat() <= t["d"] <= end.isoformat()]
+
+    async def list_accounts(self, location_id: int) -> List[dict]:
+        """Cash registers and bank accounts: [{"id", "title", "cash"}]."""
+        data, _ = await self._request("GET", "/accounts/%d" % location_id)
+        return [{"id": _int(x.get("id")), "title": str(x.get("title") or ""),
+                 "cash": str(x.get("type_slug") or "") != "cashless" and _int(x.get("type")) != 1}
+                for x in _as_list(data) if isinstance(x, dict) and x.get("id")]
+
+    async def analytics_overall(self, location_id: int, start: date, end: date,
+                                staff_id: Optional[int] = None) -> dict:
+        """Altegio's own report for the period (occupancy, clients, records, income), see parse_overall."""
+        params = {"date_from": start.isoformat(), "date_to": end.isoformat()}
+        if staff_id:
+            params["staff_id"] = staff_id
+        data, _ = await self._request("GET", "/company/%d/analytics/overall/" % location_id, params=params)
+        return parse_overall(data)
 
     async def get_appointment(self, location_id: int, appointment_id: int) -> Appointment:
         data, included = await self._request(

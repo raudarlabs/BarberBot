@@ -1,13 +1,20 @@
 """
-Bookings analytics from Altegio — for the admin dashboard (/stats.html), the bot's /admin
-statistics and a barber's own numbers.
+Shop analytics from Altegio — for the dashboard (public/stats.html), the bot's /admin summary
+and a barber's own numbers.
+
+Three Altegio sources, each answering a different question:
+- appointments → bookings: visits, no-shows, sources, barbers, services, busy hours, the coming
+  week. "Revenue" here is the price of the services done (after discounts).
+- transactions → money actually moved: income by item and account, expenses by item, profit,
+  salaries paid. Transfers between accounts (no payment item) are left out.
+- analytics/overall → Altegio's own report: income, average check, occupancy, new / returning /
+  lost clients, cancellations — the numbers the owner sees in Altegio.
 
 Every appointment is reduced to a small record:
     {"s": staff_id, "n": staff name, "t": start ISO, "st": arrived|no_show|waiting|confirmed,
      "c": cost after discounts, "k": client_id, "src": bot|online|admin, "sv": [[title, cost], ...]}
-
-Altegio returns whole days only and a busy month is thousands of rows, so closed days (older
-than FRESH_DAYS — by then visits are marked) are cached in the store per location and day;
+Altegio returns whole days and a month is thousands of rows, so closed days (older than
+FRESH_DAYS — by then visits are marked and paid) are cached in the store per location and day;
 the recent week is always fetched fresh. Cancelled (deleted) appointments are not counted.
 """
 from __future__ import annotations
@@ -19,7 +26,7 @@ import os
 import sys
 from collections import Counter
 from datetime import date, datetime, timedelta
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Awaitable, Callable, Dict, Iterable, List, Optional, Tuple
 
 from altegio import AltegioError
 
@@ -28,12 +35,27 @@ import _kv  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-DAY_KEY = "bb:an:%d:%s"   # location, YYYY-MM-DD -> JSON list of records
+DAY_KEY = "bb:an:%d:%s"   # location, YYYY-MM-DD -> JSON list of appointment records
+TX_KEY = "bb:tx:%d:%s"    # location, YYYY-MM-DD -> JSON list of transactions
 FRESH_DAYS = 7
 DAY_TTL = 200 * 86400
 CHUNK_DAYS = 10           # days per Altegio request run (keeps each run well under the page cap)
 MAX_DAYS = 200
 SOURCES = ("bot", "online", "admin")
+
+# Altegio's system payment items (ids are the same in every account) and the shop's own ones.
+SERVICES_ITEM, GOODS_ITEM, SALARY_ITEM, CERTIFICATE_ITEM = 5, 7, 3, 12
+INCOME_ITEMS = {5: "Послуги", 7: "Товари", 12: "Сертифікати", 8: "Інші доходи"}
+ITEM_LABELS = {3: "Зарплати команди", 4: "Податки й збори", 9: "Інші витрати", 1: "Інші витрати"}
+TITLE_UK = {
+    "Реклама, типография": "Реклама, друк", "Комиссия банка": "Комісія банку",
+    "Хозяйственные затраты": "Господарські витрати", "Аренда офиса": "Оренда",
+    "Аренда": "Оренда", "Коммуналка": "Комуналка", "Канцелярия": "Канцелярія",
+    "Services rendered": "Послуги", "Product sales": "Товари", "Gift card sales": "Сертифікати",
+    "Team salaries": "Зарплати команди", "Taxes and fees": "Податки й збори",
+    "Miscellaneous income": "Інші доходи", "Miscellaneous expenses": "Інші витрати",
+}
+ACCOUNT_UK = {"Основная касса": "Основна каса", "Расчетный счет": "Розрахунковий рахунок", "Сейф": "Сейф"}
 
 
 # ------------------------------------------------------------------ records
@@ -76,30 +98,27 @@ async def _kvs(*commands):
     return await asyncio.to_thread(_kv.pipeline, *commands)
 
 
-async def day_records(client, loc: int, first: date, last: date, today: date) -> Dict[date, list]:
+async def _by_day(key: str, loc: int, first: date, last: date, today: date,
+                  fetch: Callable[[date, date], Awaitable[Dict[date, list]]]) -> Dict[date, list]:
+    """{day: [items]} for the range: closed days from the store, the rest from `fetch(lo, hi)`."""
     days = [first + timedelta(days=i) for i in range((last - first).days + 1)]
     closed = [d for d in days if (today - d).days > FRESH_DAYS]
     out: Dict[date, list] = {}
     if closed:
         try:
-            for d, v in zip(closed, await _kvs(*[["GET", DAY_KEY % (loc, d.isoformat())] for d in closed])):
+            for d, v in zip(closed, await _kvs(*[["GET", key % (loc, d.isoformat())] for d in closed])):
                 if v is not None:
                     out[d] = json.loads(v)
         except Exception as e:  # noqa: BLE001 — the cache is an optimisation
             logger.warning("analytics cache read: %s", e)
     for lo, hi in _runs([d for d in days if d not in out], CHUNK_DAYS):
-        start = datetime(lo.year, lo.month, lo.day, tzinfo=client.tz)
-        appts = await client.list_appointments(loc, start, start + timedelta(days=(hi - lo).days + 1))
-        got: Dict[date, list] = {}
-        for a in appts:
-            if a.status != "cancelled" and lo <= a.start.date() <= hi:
-                got.setdefault(a.start.date(), []).append(to_record(a))
+        got = await fetch(lo, hi)
         writes = []
         for i in range((hi - lo).days + 1):
             d = lo + timedelta(days=i)
             out[d] = got.get(d, [])
             if (today - d).days > FRESH_DAYS:
-                writes.append(["SET", DAY_KEY % (loc, d.isoformat()),
+                writes.append(["SET", key % (loc, d.isoformat()),
                                json.dumps(out[d], ensure_ascii=False, separators=(",", ":")), "EX", DAY_TTL])
         if writes:
             try:
@@ -107,6 +126,17 @@ async def day_records(client, loc: int, first: date, last: date, today: date) ->
             except Exception as e:  # noqa: BLE001
                 logger.warning("analytics cache write: %s", e)
     return out
+
+
+async def day_records(client, loc: int, first: date, last: date, today: date) -> Dict[date, list]:
+    async def fetch(lo, hi):
+        start = datetime(lo.year, lo.month, lo.day, tzinfo=client.tz)
+        got: Dict[date, list] = {}
+        for a in await client.list_appointments(loc, start, start + timedelta(days=(hi - lo).days + 1)):
+            if a.status != "cancelled" and lo <= a.start.date() <= hi:
+                got.setdefault(a.start.date(), []).append(to_record(a))
+        return got
+    return await _by_day(DAY_KEY, loc, first, last, today, fetch)
 
 
 async def records(client, locations: Iterable[int], first: date, last: date, today: date) -> List[dict]:
@@ -126,6 +156,19 @@ async def records(client, locations: Iterable[int], first: date, last: date, tod
     return out
 
 
+async def transactions(client, locations: Iterable[int], first: date, last: date, today: date) -> List[dict]:
+    out: List[dict] = []
+    for loc in locations:
+        async def fetch(lo, hi, loc=loc):
+            got: Dict[date, list] = {}
+            for t in await client.list_transactions(loc, lo, hi):
+                got.setdefault(date.fromisoformat(t["d"]), []).append(t)
+            return got
+        by_day = await _by_day(TX_KEY, loc, first, last, today, fetch)
+        out += [t for d in sorted(by_day) for t in by_day[d]]
+    return out
+
+
 # ------------------------------------------------------------------ periods
 
 def _month_start(d: date) -> date:
@@ -136,8 +179,32 @@ def _prev_month(d: date) -> date:
     return (_month_start(d) - timedelta(days=1)).replace(day=1)
 
 
+MONTHS_UK = ["січень", "лютий", "березень", "квітень", "травень", "червень", "липень", "серпень",
+             "вересень", "жовтень", "листопад", "грудень"]
+FIRST_MONTH = date(2023, 1, 1)  # the earliest month the dashboard offers
+
+
+def month_param(p: str, today: date) -> Optional[date]:
+    """'YYYY-MM' → the first day of that month, if it is between FIRST_MONTH and this month."""
+    try:
+        y, m = (int(x) for x in str(p).split("-"))
+        d = date(y, m, 1)
+    except (TypeError, ValueError):
+        return None
+    return d if FIRST_MONTH <= d <= _month_start(today) else None
+
+
 def period(p: str, today: date) -> dict:
-    """p: 7 | 30 | 90 | month | prev → current and comparison ranges (inclusive dates)."""
+    """p: 7 | 30 | 90 | month | prev | YYYY-MM → current and comparison ranges (inclusive dates)."""
+    picked = month_param(p, today) if "-" in str(p) else None
+    if picked == _month_start(today):
+        p = "month"
+    elif picked is not None:
+        first = picked
+        last = (first + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+        pf, pl = _prev_month(first), first - timedelta(days=1)
+        return {"first": first, "last": last, "prev_first": pf, "prev_last": pl,
+                "label": "%s %d" % (MONTHS_UK[first.month - 1].capitalize(), first.year)}
     if p == "month":
         first, last = _month_start(today), today
         pf = _prev_month(today)
@@ -156,7 +223,7 @@ def period(p: str, today: date) -> dict:
     return {"first": first, "last": last, "prev_first": pf, "prev_last": pl, "label": label}
 
 
-# ------------------------------------------------------------------ summaries
+# ------------------------------------------------------------------ bookings
 
 def _start(r) -> datetime:
     return datetime.fromisoformat(r["t"])
@@ -182,23 +249,29 @@ def summarize(recs: List[dict], first: date, last: date, now: datetime, staff_id
             continue
         i = index[d]
         b = barbers.setdefault(r["s"], {"id": r["s"], "name": r.get("n") or "#%s" % r["s"], "visits": 0,
-                                        "revenue": 0.0, "no_show": 0, "unmarked": 0, "bot": 0, "_clients": set()})
+                                        "revenue": 0.0, "no_show": 0, "unmarked": 0, "bot": 0, "online": 0,
+                                        "booked": 0, "services": 0, "_clients": Counter(), "_days": set()})
         t["booked"] += 1
+        b["booked"] += 1
         daily["booked"][i] += 1
         sources[r["src"]] += 1
         b["bot"] += r["src"] == "bot"
+        b["online"] += r["src"] == "online"
         st = r["st"]
         if st == "arrived":
             t["visits"] += 1
             t["revenue"] += r["c"]
+            t["services"] += len(r["sv"])
             daily["visits"][i] += 1
             daily["revenue"][i] += r["c"]
             b["visits"] += 1
             b["revenue"] += r["c"]
+            b["services"] += len(r["sv"])
+            b["_days"].add(d)
             heat[start.weekday()][start.hour] += 1
             if r.get("k"):
                 clients[r["k"]] += 1
-                b["_clients"].add(r["k"])
+                b["_clients"][r["k"]] += 1
             for title, cost in r["sv"]:
                 s = services.setdefault(title, [0, 0.0])
                 s[0] += 1
@@ -212,7 +285,10 @@ def summarize(recs: List[dict], first: date, last: date, now: datetime, staff_id
     visits = t["visits"]
     rows = []
     for b in barbers.values():
-        b["clients"] = len(b.pop("_clients"))
+        cl = b.pop("_clients")
+        b["clients"] = len(cl)
+        b["repeat"] = sum(1 for n in cl.values() if n > 1)
+        b["days"] = len(b.pop("_days"))
         b["revenue"] = round(b["revenue"])
         b["avg"] = round(b["revenue"] / b["visits"]) if b["visits"] else 0
         rows.append(b)
@@ -226,6 +302,9 @@ def summarize(recs: List[dict], first: date, last: date, now: datetime, staff_id
             "no_show_rate": round(100 * t["no_show"] / (visits + t["no_show"]), 1) if visits + t["no_show"] else 0,
             "clients": len(clients), "repeat_clients": sum(1 for n in clients.values() if n > 1),
             "per_day": round(visits / len(days), 1) if days else 0,
+            "services": t["services"],
+            "barber_days": sum(b["days"] for b in rows),
+            "online_share": round(100 * (sources["online"] + sources["bot"]) / t["booked"], 1) if t["booked"] else 0,
         },
         "sources": {s: sources.get(s, 0) for s in SOURCES},
         "daily": {k: [round(x) for x in v] for k, v in daily.items()},
@@ -266,34 +345,274 @@ def delta(cur, prev) -> str:
 
 async def report(client, locations: Iterable[int], p: str, now: datetime, ahead: int = 7,
                  staff_id: Optional[int] = None) -> dict:
-    """Current period, comparison period and the coming days in one Altegio pass (one barber's
-    when `staff_id` is given)."""
+    """Bookings: current period, comparison period and the coming days in one Altegio pass (one
+    barber's when `staff_id` is given)."""
     per = period(p, now.date())
+    locations = list(locations)
     first = min(per["prev_first"], per["first"])
-    last = max(per["last"], now.date() + timedelta(days=ahead))
-    first = max(first, last - timedelta(days=MAX_DAYS))
-    recs = await records(client, list(locations), first, last, now.date())
+    today, until = now.date(), now.date() + timedelta(days=ahead)
+    if per["last"] >= today - timedelta(days=1):  # one contiguous range up to the coming week
+        recs = await records(client, locations, first, until, today)
+    else:  # an older month: that range, and the coming week separately
+        recs = await records(client, locations, first, per["last"], today)
+        recs += await records(client, locations, today, until, today)
     cur = summarize(recs, per["first"], per["last"], now, staff_id)
     prev = summarize(recs, per["prev_first"], per["prev_last"], now, staff_id)
     return {
         "label": per["label"], "current": cur,
         "previous": {"first": prev["first"], "last": prev["last"], "totals": prev["totals"],
-                     "sources": prev["sources"], "daily": prev["daily"]},
+                     "sources": prev["sources"], "daily": prev["daily"], "barbers": prev["barbers"]},
         "upcoming": upcoming(recs, now, ahead, staff_id),
         "_records": recs,
+        "_period": per,
     }
 
 
+# ------------------------------------------------------------------ money
+
+def item_label(t: dict) -> str:
+    if t["c"] in INCOME_ITEMS and t["c"] != 8:
+        return INCOME_ITEMS[t["c"]]
+    if t["c"] in ITEM_LABELS:
+        return ITEM_LABELS[t["c"]]
+    title = (t.get("cat") or "").strip()
+    return TITLE_UK.get(title, title or "Без статті")
+
+
+def money_summary(txs: List[dict], first: date, last: date, accounts: Optional[Dict[int, dict]] = None) -> dict:
+    """Money in and out: by item, by account, per day; salaries paid per team member."""
+    accounts = accounts or {}
+    days = [first + timedelta(days=i) for i in range((last - first).days + 1)]
+    index = {d.isoformat(): i for i, d in enumerate(days)}
+    income, expense, by_acc, salaries = Counter(), Counter(), Counter(), Counter()
+    daily_in, daily_out = [0.0] * len(days), [0.0] * len(days)
+    cash = 0.0
+    for t in txs:
+        i = index.get(t["d"])
+        if i is None or not t["c"]:  # outside the period, or a transfer between accounts
+            continue
+        a = t["a"]
+        if t["c"] in INCOME_ITEMS or (a > 0 and t["c"] not in ITEM_LABELS and t["c"] != SALARY_ITEM):
+            income[item_label(t)] += a          # a refund is a negative income line
+            daily_in[i] += a
+            acc = accounts.get(t["acc"], {})
+            by_acc[ACCOUNT_UK.get(acc.get("title", ""), acc.get("title") or "Інший рахунок")] += a
+            cash += a if acc.get("cash", True) else 0
+        else:
+            expense[item_label(t)] += -a
+            daily_out[i] += -a
+            if t["c"] == SALARY_ITEM and t["m"]:
+                salaries[t["m"]] += -a
+    inc, exp = sum(income.values()), sum(expense.values())
+    return {
+        "totals": {
+            "income": round(inc), "expense": round(exp), "profit": round(inc - exp),
+            "margin": round(100 * (inc - exp) / inc, 1) if inc else 0,
+            "services": round(income.get("Послуги", 0)), "goods": round(income.get("Товари", 0)),
+            "salaries": round(expense.get("Зарплати команди", 0)),
+            "cash_share": round(100 * cash / inc, 1) if inc else 0,
+        },
+        "income": [{"title": k, "sum": round(v)} for k, v in income.most_common() if round(v)],
+        "expenses": [{"title": k, "sum": round(v)} for k, v in expense.most_common() if round(v)],
+        "accounts": [{"title": k, "sum": round(v)} for k, v in by_acc.most_common() if round(v)],
+        "daily": {"income": [round(x) for x in daily_in], "expense": [round(x) for x in daily_out]},
+        "salaries": {str(k): round(v) for k, v in salaries.items()},
+    }
+
+
+# ------------------------------------------------------------------ Altegio's own report
+
+async def overall(client, locations: Iterable[int], first: date, last: date,
+                  staff_id: Optional[int] = None) -> Optional[dict]:
+    """analytics/overall merged over the locations (counts and money summed, percents averaged)."""
+    parts = []
+    for loc in locations:
+        try:
+            parts.append(await client.analytics_overall(loc, first, last, staff_id))
+        except AltegioError as e:
+            logger.warning("analytics overall %s/%s: %s", loc, staff_id, e)
+    if not parts:
+        return None
+    if len(parts) == 1:
+        return parts[0]
+    out = {}
+    for k in parts[0]:
+        vals = [p[k] for p in parts]
+        out[k] = round(sum(vals) / len(vals), 1) if k.endswith("percent") or k == "occupancy" else sum(vals)
+    out["avg_check"] = round(out["income_total"] / out["completed"], 2) if out.get("completed") else 0
+    return out
+
+
+# ------------------------------------------------------------------ KPIs and the team
+
+def _kpi(key, label, value, prev, fmt, good, hint, money=False):
+    return {"key": key, "label": label, "value": value, "prev": prev, "fmt": fmt, "good": good,
+            "hint": hint, "money": money}
+
+
+def _per(v, n, digits=0):
+    return round(v / n, digits) if n else 0
+
+
+def kpis(book: dict, money: Optional[dict], ov: Optional[dict], ov_prev: Optional[dict]) -> List[dict]:
+    """The KPI cards: value, previous period, which direction is good, and how it is counted."""
+    c, p = book["current"]["totals"], book["previous"]["totals"]
+    nd, npd = len(book["current"]["days"]), max(1, (date.fromisoformat(book["previous"]["last"])
+                                                     - date.fromisoformat(book["previous"]["first"])).days + 1)
+    ov, ovp = ov or {}, ov_prev or {}
+    out = []
+    if ov:
+        out += [
+            _kpi("revenue", "Виручка", ov["income_total"], ovp.get("income_total"), "money", "up",
+                 "Звіт Altegio: оплачені послуги й товари", True),
+            _kpi("avg_check", "Середній чек", ov["avg_check"], ovp.get("avg_check"), "money", "up",
+                 "Виручка ÷ кількість оплачених візитів (Altegio)", True),
+            _kpi("revenue_day", "Виручка за день", _per(ov["income_total"], nd), _per(ovp.get("income_total", 0), npd),
+                 "money", "up", "Виручка ÷ дні періоду", True),
+        ]
+    out += [
+        _kpi("visits_day", "Візитів за день", _per(c["visits"], nd, 1), _per(p["visits"], npd, 1), "num1", "up",
+             "Візити зі статусом «прийшов» ÷ дні періоду"),
+    ]
+    if ov:
+        out += [
+            _kpi("occupancy", "Завантаженість", ov["occupancy"], ovp.get("occupancy"), "pct", "up",
+                 "Частка робочого часу майстрів, зайнята записами (Altegio)"),
+            _kpi("new_clients", "Нові клієнти", ov["new_clients"], ovp.get("new_clients"), "int", "up",
+                 "Прийшли вперше за цей період (Altegio)"),
+            _kpi("return", "Повертаються", ov["return_percent"], ovp.get("return_percent"), "pct", "up",
+                 "Частка клієнтів, які вже бували раніше (Altegio)"),
+            _kpi("lost", "Втрачені клієнти", ov["lost_clients"], ovp.get("lost_clients"), "int", "down",
+                 "Давно не приходили — за правилом Altegio"),
+            _kpi("cancelled", "Скасування", ov["cancelled_percent"], ovp.get("cancelled_percent"), "pct", "down",
+                 "Частка скасованих записів (Altegio)"),
+        ]
+    out += [
+        _kpi("no_show", "Неявки", c["no_show_rate"], p["no_show_rate"], "pct", "down",
+             "Записи «не прийшов» ÷ (візити + неявки)"),
+        _kpi("online", "Онлайн-запис", c["online_share"], p["online_share"], "pct", "up",
+             "Записалися самі: онлайн-запис Altegio і бот"),
+        _kpi("services_visit", "Послуг на візит", _per(c["services"], c["visits"], 2),
+             _per(p["services"], p["visits"], 2), "num2", "up", "Скільки послуг у середньому за один візит"),
+    ]
+    if ov:
+        out.append(_kpi("barber_day", "Виручка майстра за день", _per(c["revenue"], c["barber_days"]),
+                        _per(p["revenue"], p["barber_days"]), "money", "up",
+                        "Вартість послуг ÷ дні, коли майстер мав візити", True))
+    if money:
+        m, mp = money["current"]["totals"], money["previous"]["totals"]
+        out += [
+            _kpi("profit", "Прибуток", m["profit"], mp["profit"], "money", "up",
+                 "Надходження − витрати за касами Altegio", True),
+            _kpi("margin", "Маржа", m["margin"], mp["margin"], "pct", "up", "Прибуток ÷ надходження", True),
+            _kpi("salary_share", "Зарплати / надходження", _per(100 * m["salaries"], m["income"], 1),
+                 _per(100 * mp["salaries"], mp["income"], 1), "pct", "down",
+                 "Виплати команді ÷ надходження (виплати за період, а не нараховано)", True),
+            _kpi("goods", "Продаж товарів", m["goods"], mp["goods"], "money", "up", "Надходження за товари", True),
+        ]
+    return out
+
+
+def team(book: dict, money: Optional[dict], ov_staff: Dict[int, dict], ov_staff_prev: Dict[int, dict]) -> List[dict]:
+    """One row per barber with visits in either period: performance and its change."""
+    cur = {b["id"]: b for b in book["current"]["barbers"]}
+    prev = {b["id"]: b for b in book["previous"].get("barbers", [])}
+    total_rev = sum(b["revenue"] for b in cur.values()) or 0
+    salaries = (money or {}).get("current", {}).get("salaries", {})
+    rows = []
+    for sid in list(cur) + [s for s in prev if s not in cur]:
+        b, pb = cur.get(sid, {}), prev.get(sid, {})
+        o, op = ov_staff.get(sid) or {}, ov_staff_prev.get(sid) or {}
+        rev, visits, days = b.get("revenue", 0), b.get("visits", 0), b.get("days", 0)
+        salary = salaries.get(str(sid))
+        rows.append({
+            "id": sid, "name": b.get("name") or pb.get("name") or "#%s" % sid,
+            "revenue": rev, "revenue_prev": pb.get("revenue", 0),
+            "share": round(100 * rev / total_rev, 1) if total_rev else 0,
+            "visits": visits, "visits_prev": pb.get("visits", 0),
+            "avg": b.get("avg", 0), "avg_prev": pb.get("avg", 0),
+            "days": days, "rev_day": _per(rev, days), "rev_day_prev": _per(pb.get("revenue", 0), pb.get("days", 0)),
+            "visits_day": _per(visits, days, 1),
+            "clients": b.get("clients", 0), "repeat": b.get("repeat", 0),
+            "no_show": b.get("no_show", 0), "unmarked": b.get("unmarked", 0),
+            "online": _per(100 * (b.get("online", 0) + b.get("bot", 0)), b.get("booked", 0), 1),
+            "occupancy": o.get("occupancy"), "occupancy_prev": op.get("occupancy"),
+            "new_clients": o.get("new_clients"), "return_percent": o.get("return_percent"),
+            "salary": salary, "salary_share": _per(100 * salary, rev, 1) if salary else None,
+        })
+    rows.sort(key=lambda r: (-r["revenue"], -r["visits"], r["name"]))
+    for i, r in enumerate(rows, 1):
+        r["rank"] = i
+    return rows
+
+
+async def list_accounts(client, locations: Iterable[int]) -> Dict[int, dict]:
+    out = {}
+    for loc in locations:
+        try:
+            for a in await client.list_accounts(loc):
+                out[a["id"]] = a
+        except AltegioError as e:
+            logger.warning("accounts %s: %s", loc, e)
+    return out
+
+
+async def full_report(client, locations: Iterable[int], p: str, now: datetime,
+                      staff_id: Optional[int] = None, with_money: bool = True, with_team: bool = True) -> dict:
+    """Everything the dashboard shows. `staff_id`: one barber. `with_money`: transactions and the
+    money KPIs. `with_team`: Altegio's report per barber for the team page."""
+    locations = list(locations)
+    book = await report(client, locations, p, now, staff_id=staff_id)
+    per = book.pop("_period")
+    recs = book.pop("_records")
+    del recs
+    ov = await overall(client, locations, per["first"], per["last"], staff_id)
+    ov_prev = await overall(client, locations, per["prev_first"], per["prev_last"], staff_id)
+    money = None
+    if with_money:
+        first = min(per["prev_first"], per["first"])
+        txs = await transactions(client, locations, first, per["last"], now.date())
+        accounts = await list_accounts(client, locations)
+        cur_m = money_summary(txs, per["first"], per["last"], accounts)
+        prev_m = money_summary(txs, per["prev_first"], per["prev_last"], accounts)
+        if staff_id is not None:  # one barber: only what was paid to him
+            for part in (cur_m, prev_m):
+                part["salaries"] = {k: v for k, v in part["salaries"].items() if k == str(staff_id)}
+        money = {"current": cur_m, "previous": {"totals": prev_m["totals"]}}
+    out = {"label": per["label"], "bookings": book, "overall": {"current": ov, "previous": ov_prev},
+           "money": money, "kpi": kpis(book, money, ov, ov_prev)}
+    if with_team and staff_id is None:
+        ids = sorted({b["id"] for b in book["current"]["barbers"]} | {b["id"] for b in book["previous"]["barbers"]})
+        cur_s, prev_s = {}, {}
+        for sid in ids:
+            cur_s[sid] = await overall(client, locations, per["first"], per["last"], sid)
+            prev_s[sid] = await overall(client, locations, per["prev_first"], per["prev_last"], sid)
+        out["team"] = team(book, money, cur_s, prev_s)
+    return out
+
+
 def hide_money(rep: dict) -> dict:
-    """A barber's view without revenue figures (unless the owner turns them on)."""
+    """A barber's view without money (unless the owner turns it on). Works on a bookings report
+    ({current, previous, upcoming}) and on a full report ({bookings, money, kpi, overall})."""
+    if "bookings" in rep:
+        hide_money(rep["bookings"])
+        rep["money"] = None
+        rep["kpi"] = [k for k in rep.get("kpi", []) if not k.get("money")]
+        for part in (rep.get("overall") or {}).values():
+            if part:
+                for k in ("income_total", "income_services", "income_goods", "avg_check", "avg_services_check"):
+                    part[k] = None
+        rep.pop("team", None)
+        rep["money_hidden"] = True
+        return rep
     for part in (rep.get("current", {}), rep.get("previous", {})):
         for k in ("revenue", "avg_check"):
             if k in part.get("totals", {}):
                 part["totals"][k] = None
         if "revenue" in part.get("daily", {}):
             part["daily"]["revenue"] = None
-    for b in rep.get("current", {}).get("barbers", []):
-        b["revenue"] = b["avg"] = None
+        for b in part.get("barbers", []):
+            b["revenue"] = b["avg"] = None
     for s in rep.get("current", {}).get("services", []):
         s["revenue"] = None
     if "upcoming" in rep:

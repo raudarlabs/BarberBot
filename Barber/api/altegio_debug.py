@@ -34,12 +34,15 @@ def shape(v, depth=0):
 
 
 def aggregate(items, keys):
-    """How often each value of the given (non-personal) fields occurs across the list."""
+    """How often each value of the given (non-personal) fields occurs across the list.
+    A dotted key reads a nested field (expense.title, account.title)."""
     out = {}
     for k in keys:
         counts = {}
         for it in items:
-            v = it.get(k) if isinstance(it, dict) else None
+            v = it
+            for part in k.split("."):  # "expense.title": nested, non-personal fields
+                v = v.get(part) if isinstance(v, dict) else None
             v = json.dumps(v) if not isinstance(v, (dict, list)) else type(v).__name__
             counts[v] = counts.get(v, 0) + 1
         out[k] = counts
@@ -119,7 +122,8 @@ class handler(BaseHTTPRequestHandler):
             except Exception as e:  # noqa: BLE001
                 return self._reply(502, {"error": "%s: %s" % (type(e).__name__, str(e)[:200])})
         path = q.pop("path", "")
-        agg = [k for k in q.pop("agg", "").split(",") if k and k not in ("name", "phone", "email", "user")]
+        agg = [k for k in q.pop("agg", "").split(",")
+               if k and not set(k.split(".")) & {"name", "phone", "email", "user", "client", "comment", "fullname"}]
         if not path.startswith("/") or ".." in path:
             return self._reply(400, {"error": "path"})
         try:

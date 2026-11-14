@@ -3,50 +3,68 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="robots" content="noindex">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
 <title>Custom True · Дашборд</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {
     --bg: #120d0f; --card: #1d1416; --card2: #251a1d; --line: rgba(214,150,160,.16);
     --accent: #e4b8b2; --accent-hi: #f5d9d4; --wine: #a8435f;
-    --cream: #f3ebe8; --muted: #a8939a; --good: #7fcf9a; --bad: #ef6b62;
+    --cream: #f3ebe8; --muted: #a8939a; --good: #7fcf9a; --bad: #ef6b62; --out: #6d5a60;
   }
   * { box-sizing: border-box; margin: 0; }
   html { -webkit-text-size-adjust: 100%; }
   body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; background: var(--bg);
-         color: var(--cream); padding: 14px 14px calc(28px + env(safe-area-inset-bottom)); font-variant-numeric: tabular-nums; }
-  main { max-width: 820px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
-  header { display: flex; justify-content: space-between; align-items: flex-end; gap: 8px; padding: 4px 2px 0; }
-  h1 { font-size: 20px; font-weight: 700; letter-spacing: .2px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+         color: var(--cream); padding: 12px 14px calc(28px + env(safe-area-inset-bottom)); font-variant-numeric: tabular-nums; }
+  main { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+  header { display: flex; justify-content: space-between; align-items: flex-end; gap: 8px; padding: 2px 2px 0; }
   .brand { color: var(--accent); font-size: 12px; font-weight: 600; letter-spacing: .3px; }
+  h1 { font-size: 20px; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .upd { color: var(--muted); font-size: 12px; white-space: nowrap; }
-  .seg, .chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
-  .seg::-webkit-scrollbar, .chips::-webkit-scrollbar { display: none; }
-  .seg button { flex: none; border: 1px solid var(--line); background: var(--card); color: var(--muted); font: inherit;
-                font-size: 13px; padding: 7px 12px; border-radius: 999px; cursor: pointer; }
-  .seg button.on { background: var(--accent); color: #1c1113; border-color: var(--accent); font-weight: 600; }
-  .chips button { flex: none; border: 1px solid var(--line); background: none; color: var(--cream); font: inherit; font-size: 12px;
-                  padding: 5px 10px; border-radius: 999px; cursor: pointer; }
-  .chips button.on { border-color: var(--accent); color: var(--accent); }
-  .kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  @media (min-width: 640px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .scroll { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .scroll::-webkit-scrollbar { display: none; }
+  .tabs-main { position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 6px 0; margin: -6px 0; }
+  .tabs-main button { flex: 1 0 auto; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted);
+                      font: inherit; font-size: 14px; font-weight: 600; padding: 8px 8px; cursor: pointer; }
+  .tabs-main button.on { color: var(--accent-hi); border-bottom-color: var(--accent); }
+  .pill { flex: none; border: 1px solid var(--line); background: var(--card); color: var(--muted); font: inherit;
+          font-size: 13px; padding: 6px 12px; border-radius: 999px; cursor: pointer; }
+  .pill.on { background: var(--accent); color: #1c1113; border-color: var(--accent); font-weight: 600; }
+  .picker { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px; }
+  .picker .yr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-weight: 700; }
+  .picker .yr button { border: 1px solid var(--line); background: none; color: var(--cream); font: inherit; width: 36px; height: 32px; border-radius: 10px; cursor: pointer; }
+  .picker .yr button:disabled { opacity: .3; cursor: default; }
+  .picker .ms { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .picker .ms button { border: 1px solid var(--line); background: var(--card2); color: var(--cream); font: inherit; font-size: 13px;
+                       padding: 9px 2px; border-radius: 10px; cursor: pointer; }
+  .picker .ms button.on { background: var(--accent); color: #1c1113; border-color: var(--accent); font-weight: 600; }
+  .picker .ms button:disabled { opacity: .25; cursor: default; }
+  .chip { flex: none; border: 1px solid var(--line); background: none; color: var(--cream); font: inherit; font-size: 12px;
+          padding: 5px 10px; border-radius: 999px; cursor: pointer; }
+  .chip.on { border-color: var(--accent); color: var(--accent); }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  @media (min-width: 640px) { .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   .kpi { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; min-width: 0; }
   .kpi .l { color: var(--muted); font-size: 12px; }
-  .kpi .v { font-size: 24px; font-weight: 700; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kpi .v { font-size: 22px; font-weight: 700; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .kpi .s { font-size: 12px; color: var(--muted); margin-top: 2px; }
-  .up { color: var(--good); } .down { color: var(--bad); }
+  .kpi .h { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.35; opacity: .85; }
+  .up { color: var(--good); } .down { color: var(--bad); } .flat { color: var(--muted); }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px; min-width: 0; }
   .card h2 { font-size: 15px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
   .card h2 span { color: var(--muted); font-size: 12px; font-weight: 400; text-align: right; }
-  .tabs { display: inline-flex; background: var(--card2); border-radius: 999px; padding: 2px; }
-  .tabs button { border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 999px; cursor: pointer; }
-  .tabs button.on { background: var(--wine); color: var(--cream); }
+  .seg2 { display: inline-flex; background: var(--card2); border-radius: 999px; padding: 2px; }
+  .seg2 button { border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 999px; cursor: pointer; }
+  .seg2 button.on { background: var(--wine); color: var(--cream); }
   .chart { display: flex; align-items: flex-end; gap: 2px; height: 140px; }
   .chart .b { flex: 1; min-width: 2px; background: var(--wine); border-radius: 4px 4px 1px 1px; cursor: pointer; }
   .chart .b.we { background: #c25a78; }
   .chart .b.today { background: var(--accent); }
   .chart .b.sel { outline: 2px solid var(--accent-hi); outline-offset: 1px; }
+  .chart .pair { flex: 1; display: flex; align-items: flex-end; gap: 1px; height: 100%; cursor: pointer; }
+  .chart .pair i { flex: 1; display: block; border-radius: 3px 3px 1px 1px; min-height: 1px; }
+  .chart .pair.sel { outline: 2px solid var(--accent-hi); outline-offset: 1px; border-radius: 3px; }
   .axis { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-top: 6px; }
   .tip { min-height: 18px; font-size: 13px; color: var(--accent-hi); margin-top: 8px; }
   .stack { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: var(--card2); }
@@ -61,10 +79,10 @@
   .row .sub { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
   .row .bar { grid-column: 1 / -1; height: 6px; border-radius: 999px; background: var(--card2); overflow: hidden; }
   .row .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--wine), var(--accent)); border-radius: 999px; }
-  .row.click { cursor: pointer; }
+  .row .bar.out i { background: linear-gradient(90deg, #5a474d, #9c8389); }
   .heat { display: grid; grid-template-columns: 22px repeat(var(--cols), minmax(0, 1fr)); gap: 3px; font-size: 10px; color: var(--muted); align-items: center; }
   .heat i { aspect-ratio: 1; border-radius: 4px; display: block; }
-  .heat .h { text-align: center; }
+  .heat .hh { text-align: center; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { padding: 7px 4px; text-align: right; white-space: nowrap; }
   th { color: var(--muted); font-weight: 500; font-size: 11px; }
@@ -72,11 +90,23 @@
   tr + tr td { border-top: 1px solid var(--line); }
   .two { display: grid; gap: 12px; }
   @media (min-width: 700px) { .two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
-  .msg { color: var(--muted); text-align: center; padding: 26px 10px; font-size: 14px; }
+  .person { cursor: pointer; }
+  .person .top { display: flex; align-items: center; gap: 10px; }
+  .rank { width: 28px; height: 28px; border-radius: 50%; background: var(--card2); color: var(--accent); font-weight: 700; font-size: 13px;
+          display: flex; align-items: center; justify-content: center; flex: none; }
+  .rank.r1 { background: var(--accent); color: #1c1113; }
+  .person .nm { font-size: 15px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .person .rv { text-align: right; }
+  .person .rv b { font-size: 16px; display: block; }
+  .person .rv span { font-size: 12px; }
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 10px; margin-top: 12px; }
+  @media (min-width: 640px) { .stats { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+  .stats div { min-width: 0; }
+  .stats small { display: block; color: var(--muted); font-size: 11px; }
+  .stats b { font-size: 14px; font-weight: 600; white-space: nowrap; }
+  .stats em { font-style: normal; font-size: 11px; margin-left: 3px; }
+  .msg { color: var(--muted); text-align: center; padding: 26px 10px; font-size: 14px; line-height: 1.5; }
   .bad { color: var(--bad); }
-  .login { display: flex; flex-direction: column; gap: 10px; }
-  .login input { font: inherit; font-size: 16px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--card2); color: var(--cream); }
-  .login button { font: inherit; font-size: 16px; font-weight: 700; padding: 13px; border-radius: 12px; border: 0; background: var(--accent); color: #1c1113; cursor: pointer; }
   .note { color: var(--muted); font-size: 11px; line-height: 1.5; padding: 0 2px; }
   .skel { background: linear-gradient(90deg, var(--card) 0%, var(--card2) 50%, var(--card) 100%); background-size: 200% 100%;
           animation: sh 1.2s infinite linear; border-radius: 16px; height: 86px; }
@@ -86,11 +116,14 @@
 <body>
 <main>
   <header><div style="min-width:0"><div class="brand">Custom True</div><h1 id="title">Дашборд</h1></div><span class="upd" id="upd"></span></header>
-  <div class="seg" id="periods">
-    <button data-p="month">Цей місяць</button><button data-p="prev">Минулий місяць</button>
-    <button data-p="7">7 днів</button><button data-p="30">30 днів</button><button data-p="90">90 днів</button>
+  <div class="scroll tabs-main" id="tabs" hidden></div>
+  <div class="scroll" id="periods" hidden>
+    <button class="pill" data-p="month">Цей місяць</button><button class="pill" data-p="prev">Минулий місяць</button>
+    <button class="pill" data-pick="1" id="pickbtn">📅 Місяць</button>
+    <button class="pill" data-p="7">7 днів</button><button class="pill" data-p="30">30 днів</button><button class="pill" data-p="90">90 днів</button>
   </div>
-  <div class="chips" id="staff" hidden></div>
+  <div class="picker" id="picker" hidden></div>
+  <div class="scroll" id="staff" hidden></div>
   <div id="out"></div>
   <p class="note" id="note"></p>
 </main>
@@ -103,73 +136,91 @@
   const GAMES = { dryer: 'Фен-пілот', fade: 'Ідеальний фейд', beard: 'Борода-ніндзя', snake: 'Змійка', blocks: 'Укладка' };
   const SRC = { bot: ['Бот Telegram', '#e4b8b2'], online: ['Онлайн-запис', '#a8435f'], admin: ['Адміністратор', '#6d5a60'] };
   const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
+  const TABS = { kpi: 'KPI', book: 'Записи', money: 'Гроші', team: 'Команда', fun: 'Ігри' };
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const num = (v) => Math.round(v || 0).toLocaleString('uk-UA');
-  const uah = (v) => num(v) + ' ₴';
+  const num = (v, d = 0) => (v == null ? '—' : Number(v).toLocaleString('uk-UA', { minimumFractionDigits: d, maximumFractionDigits: d }));
+  const uah = (v) => (v == null ? '—' : num(v) + ' ₴');
+  const pct = (v) => (v == null ? '—' : num(v, v % 1 ? 1 : 0) + '%');
   const dm = (iso) => iso.slice(8, 10) + '.' + iso.slice(5, 7);
   const wdi = (iso) => (new Date(iso + 'T12:00:00').getDay() + 6) % 7;
   const wd = (iso) => WD[wdi(iso)];
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Kyiv' });
   const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
                   set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+  const MONTHS = ['Січ', 'Лют', 'Бер', 'Кві', 'Тра', 'Чер', 'Лип', 'Сер', 'Вер', 'Жов', 'Лис', 'Гру'];
+  const MONTHS_FULL = ['Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', 'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень'];
+  const NOW_Y = +today.slice(0, 4), NOW_M = +today.slice(5, 7), FIRST_Y = 2023;
+  const isMonth = (p) => /^\d{4}-\d{2}$/.test(p);
+  const FMT = { money: uah, int: (v) => num(v), pct, num1: (v) => num(v, 1), num2: (v) => num(v, 2) };
 
-  let period = store.get('dash.p') || 'month', staff = '', key = store.get('dash.key') || '', data = null, metric = 'visits', sel = -1;
+  let pickYear = NOW_Y;
+  let period = store.get('dash.p') || 'month', tab = store.get('dash.tab') || 'kpi', staff = '', data = null;
+  let metric = 'visits', sel = -1, msel = -1, sortBy = store.get('dash.sort') || 'revenue';
 
-  function delta(cur, prev) {
-    if (cur == null || !prev) return '';
-    const p = Math.round(100 * (cur - prev) / prev);
-    return `<span class="${p >= 0 ? 'up' : 'down'}">${p >= 0 ? '▲' : '▼'} ${Math.abs(p)}%</span> `;
+  // change vs the previous period, coloured by whether up is good
+  function chg(cur, prev, good = 'up') {
+    if (cur == null || prev == null || prev === 0) return '';
+    const p = Math.round(100 * (cur - prev) / Math.abs(prev));
+    if (!p) return '<span class="flat">● 0%</span> ';
+    const better = (p > 0) === (good === 'up');
+    return `<span class="${better ? 'up' : 'down'}">${p > 0 ? '▲' : '▼'} ${Math.abs(p)}%</span> `;
   }
-  const kpi = (l, v, s) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s || '&nbsp;'}</div></div>`;
+  const card = (l, v, s, h) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s || '&nbsp;'}</div>${h ? `<div class="h">${h}</div>` : ''}</div>`;
+  const rowBar = (name, val, w, sub, out) => `<div class="row"><div class="n">${esc(name)}</div><div class="m">${val}</div><div class="bar${out ? ' out' : ''}"><i style="width:${Math.max(1, Math.round(w))}%"></i></div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
 
-  function chart(b) {
-    const cur = b.current, series = cur.daily[metric] || [], max = Math.max(1, ...series);
-    const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Kyiv' });
+  // ---------------------------------------------------------------- KPI
+  function kpiTab(r) {
+    const cards = r.kpi.map((k) => card(k.label, FMT[k.fmt](k.value),
+      chg(k.value, k.prev, k.good) + (k.prev != null ? 'було ' + FMT[k.fmt](k.prev) : ''), esc(k.hint))).join('');
+    return `<div class="grid">${cards}</div>`;
+  }
+
+  // ---------------------------------------------------------------- bookings
+  function dayChart(cur) {
+    const series = cur.daily[metric] || [], max = Math.max(1, ...series);
     const bars = series.map((v, i) => {
       const d = cur.days[i];
       return `<div class="b${wdi(d) >= 5 ? ' we' : ''}${d === today ? ' today' : ''}${i === sel ? ' sel' : ''}" data-i="${i}" style="height:${Math.max(2, Math.round(v / max * 100))}%"></div>`;
     }).join('');
-    const tabs = cur.daily.revenue ? `<div class="tabs"><button data-m="visits" class="${metric === 'visits' ? 'on' : ''}">Візити</button><button data-m="revenue" class="${metric === 'revenue' ? 'on' : ''}">Виручка</button></div>` : '';
+    const tabs = cur.daily.revenue ? `<div class="seg2"><button data-m="visits" class="${metric === 'visits' ? 'on' : ''}">Візити</button><button data-m="revenue" class="${metric === 'revenue' ? 'on' : ''}">Вартість</button></div>` : '';
     let tip = 'Натисніть на стовпчик, щоб побачити день';
     if (sel >= 0 && cur.days[sel]) {
       const d = cur.days[sel];
       tip = `${wd(d)}, ${dm(d)}: візитів ${cur.daily.visits[sel]}` + (cur.daily.revenue ? ` · ${uah(cur.daily.revenue[sel])}` : '') + ` · записів ${cur.daily.booked[sel]}`;
     }
-    return `<div class="card"><h2>По днях ${tabs}</h2><div class="chart">${bars}</div>
+    return `<div class="card"><h2>По днях ${tabs}</h2><div class="chart" data-k="day">${bars}</div>
       <div class="axis"><span>${dm(cur.days[0])}</span><span>сб і нд — світліші</span><span>${dm(cur.days[cur.days.length - 1])}</span></div>
       <div class="tip">${tip}</div></div>`;
   }
 
-  function sources(b) {
+  function sourcesCard(b) {
     const s = b.current.sources, total = Object.values(s).reduce((a, x) => a + x, 0);
     if (!total) return '';
     const parts = Object.keys(SRC).map((k) => `<i style="width:${100 * s[k] / total}%;background:${SRC[k][1]}"></i>`).join('');
-    const leg = Object.keys(SRC).map((k) => `<span><i class="dot" style="background:${SRC[k][1]}"></i>${SRC[k][0]} <b>${s[k]}</b> <span style="color:var(--muted)">${Math.round(100 * s[k] / total)}%</span></span>`).join('');
-    return `<div class="card"><h2>Звідки записи <span>${total} записів</span></h2><div class="stack">${parts}</div><div class="legend">${leg}</div>
-      <p class="note" style="margin-top:10px;padding:0">Через бот у попередньому періоді: ${b.previous.sources.bot}</p></div>`;
+    const leg = Object.keys(SRC).map((k) => `<span><i class="dot" style="background:${SRC[k][1]}"></i>${SRC[k][0]} <b>${s[k]}</b> <span class="flat">${Math.round(100 * s[k] / total)}%</span></span>`).join('');
+    return `<div class="card"><h2>Звідки записи <span>${total} записів</span></h2><div class="stack">${parts}</div><div class="legend">${leg}</div></div>`;
   }
 
-  function barbers(b, clickable) {
+  function barbersCard(b, clickable) {
     const rows = b.current.barbers;
     if (rows.length < 2) return '';
     const money = rows[0].revenue != null, val = (r) => money ? r.revenue : r.visits, max = Math.max(1, ...rows.map(val));
     return `<div class="card"><h2>Майстри <span>${clickable ? 'натисніть, щоб відкрити окремо' : ''}</span></h2><div class="rows">${rows.map((r) => `
-      <div class="row${clickable ? ' click' : ''}" data-staff="${r.id}"><div class="n">${esc(r.name)}</div><div class="m">${money ? uah(r.revenue) : r.visits + ' віз.'}</div>
+      <div class="row${clickable ? ' person' : ''}" data-staff="${r.id}"><div class="n">${esc(r.name)}</div><div class="m">${money ? uah(r.revenue) : r.visits + ' віз.'}</div>
       <div class="bar"><i style="width:${Math.round(100 * val(r) / max)}%"></i></div>
-      <div class="sub">${r.visits} візитів${money ? ' · чек ' + uah(r.avg) : ''} · клієнтів ${r.clients}${r.no_show ? ' · не прийшли ' + r.no_show : ''}${r.bot ? ' · через бот ' + r.bot : ''}${r.unmarked ? ' · не відмічено ' + r.unmarked : ''}</div></div>`).join('')}</div></div>`;
+      <div class="sub">${r.visits} візитів${money ? ' · чек ' + uah(r.avg) : ''} · клієнтів ${r.clients}${r.no_show ? ' · не прийшли ' + r.no_show : ''}${r.unmarked ? ' · не відмічено ' + r.unmarked : ''}</div></div>`).join('')}</div></div>`;
   }
 
-  function services(b) {
+  function servicesCard(b) {
     const rows = b.current.services;
     if (!rows.length) return '';
     const max = Math.max(1, ...rows.map((r) => r.count));
-    return `<div class="card"><h2>Послуги <span>топ ${rows.length}</span></h2><div class="rows">${rows.map((r) => `
-      <div class="row"><div class="n">${esc(r.title)}</div><div class="m">${r.count}</div>
-      <div class="bar"><i style="width:${Math.round(100 * r.count / max)}%"></i></div>
-      ${r.revenue != null ? `<div class="sub">${uah(r.revenue)}</div>` : ''}</div>`).join('')}</div></div>`;
+    return `<div class="card"><h2>Послуги <span>топ ${rows.length}</span></h2><div class="rows">${rows.map((r) =>
+      rowBar(r.title, r.count, 100 * r.count / max, r.revenue != null ? uah(r.revenue) : '')).join('')}</div></div>`;
   }
 
-  function heat(b) {
+  function heatCard(b) {
     const h = b.current.heat;
     let lo = 23, hi = 0;
     h.forEach((row) => row.forEach((v, i) => { if (v) { lo = Math.min(lo, i); hi = Math.max(hi, i); } }));
@@ -177,7 +228,7 @@
     lo = Math.min(lo, 10); hi = Math.max(hi, 19);
     const max = Math.max(1, ...h.flat());
     let cells = '<span></span>';
-    for (let i = lo; i <= hi; i++) cells += `<span class="h">${i % 2 === 0 ? i : ''}</span>`;
+    for (let i = lo; i <= hi; i++) cells += `<span class="hh">${i % 2 === 0 ? i : ''}</span>`;
     h.forEach((row, d) => {
       cells += `<span>${WD[d]}</span>`;
       for (let i = lo; i <= hi; i++) {
@@ -188,104 +239,226 @@
     return `<div class="card"><h2>Коли найбільше візитів <span>день × година</span></h2><div class="heat" style="--cols:${hi - lo + 1}">${cells}</div></div>`;
   }
 
-  function upcoming(b) {
+  function upcomingCard(b) {
     const u = b.upcoming, days = Object.entries(u.by_day);
     if (!u.count) return `<div class="card"><h2>Наступні 7 днів</h2><p class="msg" style="padding:8px">Записів поки немає</p></div>`;
     const max = Math.max(1, ...days.map(([, v]) => v));
     return `<div class="card"><h2>Наступні 7 днів <span>${u.count} записів${u.expected != null ? ' · ~' + uah(u.expected) : ''}</span></h2>
-      <div class="rows">${days.map(([d, v]) => `<div class="row"><div class="n">${wd(d)}, ${dm(d)}</div><div class="m">${v}</div><div class="bar"><i style="width:${Math.round(100 * v / max)}%"></i></div></div>`).join('')}</div></div>`;
+      <div class="rows">${days.map(([d, v]) => rowBar(`${wd(d)}, ${dm(d)}`, v, 100 * v / max)).join('')}</div></div>`;
   }
 
-  function bot(d) {
-    if (!d.bot) return '';
-    const e = d.bot.events, c = d.bot.chats;
-    const names = { booked: 'Записи', moved: 'Переноси', cancelled: 'Скасування', reminded: 'Нагадування' };
-    const rows = Object.keys(names).map((k) => `<tr><td>${names[k]}</td><td>${e[k].today}</td><td>${e[k].week}</td><td>${e[k].month}</td><td>${e[k].all}</td></tr>`).join('');
-    return `<div class="card"><h2>Бот <span>${c.total} клієнтів · сьогодні ${c.day} · 7 днів ${c.week}</span></h2>
-      <table><tr><th></th><th>Сьогодні</th><th>7 днів</th><th>Місяць</th><th>Всього</th></tr>${rows}</table></div>`;
+  function bookTab(r, admin) {
+    const b = r.bookings, c = b.current.totals, p = b.previous.totals, ov = (r.overall || {}).current || {};
+    let html = '<div class="grid">';
+    html += card('Візити', num(c.visits), chg(c.visits, p.visits) + `~${c.per_day} на день`);
+    html += card('Записів усього', num(c.booked), chg(c.booked, p.booked) + `не відмічено ${c.unmarked}`);
+    if (c.revenue != null) html += card('Вартість послуг', uah(c.revenue), chg(c.revenue, p.revenue) + 'чек ' + uah(c.avg_check));
+    html += card('Клієнти', num(c.clients), `повторних ${c.repeat_clients}`);
+    html += card('Неявки', num(c.no_show), chg(c.no_show_rate, p.no_show_rate, 'down') + pct(c.no_show_rate));
+    if (ov.cancelled != null) html += card('Скасовано', num(ov.cancelled), pct(ov.cancelled_percent) + ' записів');
+    html += card('Наступні 7 днів', num(b.upcoming.count), b.upcoming.expected != null ? '~' + uah(b.upcoming.expected) : 'записів');
+    html += '</div>' + dayChart(b.current);
+    html += `<div class="two">${barbersCard(b, admin && !data.staff)}${sourcesCard(b)}</div>`;
+    html += `<div class="two">${servicesCard(b)}${upcomingCard(b)}</div>` + heatCard(b);
+    return html;
   }
 
-  function games(d) {
-    if (!d.games) return '';
-    const g = d.games.games;
-    const rows = Object.keys(GAMES).map((k) => { const x = g[k] || {}; return `<tr><td>${GAMES[k]}</td><td>${(x.plays || {}).today || 0}</td><td>${(x.plays || {}).month || 0}</td><td>${(x.players || {}).month || 0}</td><td>${x.best_month ?? '—'}</td></tr>`; }).join('');
-    const hub = (g.hub || {}).opens || {};
-    return `<div class="card"><h2>Ігри <span>хаб: сьогодні ${hub.today || 0} · місяць ${hub.month || 0}</span></h2>
-      <table><tr><th></th><th>Сьогодні</th><th>Місяць</th><th>Гравців</th><th>Рекорд</th></tr>${rows}</table></div>`;
+  // ---------------------------------------------------------------- money
+  function moneyChart(m, days) {
+    const inc = m.daily.income, exp = m.daily.expense, max = Math.max(1, ...inc, ...exp);
+    const pairs = inc.map((v, i) => `<div class="pair${i === msel ? ' sel' : ''}" data-i="${i}"><i style="height:${Math.round(v / max * 100)}%;background:var(--accent)"></i><i style="height:${Math.round(exp[i] / max * 100)}%;background:var(--out)"></i></div>`).join('');
+    let tip = 'Натисніть на день';
+    if (msel >= 0 && days[msel]) tip = `${wd(days[msel])}, ${dm(days[msel])}: надійшло ${uah(inc[msel])} · витрачено ${uah(exp[msel])}`;
+    return `<div class="card"><h2>Надходження й витрати по днях</h2><div class="chart" data-k="money">${pairs}</div>
+      <div class="axis"><span>${dm(days[0])}</span><span><i class="dot" style="background:var(--accent)"></i> надходження · <i class="dot" style="background:var(--out)"></i> витрати</span><span>${dm(days[days.length - 1])}</span></div>
+      <div class="tip">${tip}</div></div>`;
+  }
+
+  function moneyTab(r) {
+    const m = r.money && r.money.current;
+    if (!m) return '<p class="msg">Фінанси доступні адміністраторам</p>';
+    const t = m.totals, p = r.money.previous.totals, days = r.bookings.current.days;
+    let html = '<div class="grid">';
+    html += card('Надходження', uah(t.income), chg(t.income, p.income) + 'було ' + uah(p.income));
+    html += card('Витрати', uah(t.expense), chg(t.expense, p.expense, 'down') + 'було ' + uah(p.expense));
+    html += card('Прибуток', uah(t.profit), chg(t.profit, p.profit) + 'було ' + uah(p.profit));
+    html += card('Маржа', pct(t.margin), 'було ' + pct(p.margin));
+    html += card('Зарплати команді', uah(t.salaries), t.income ? pct(Math.round(1000 * t.salaries / t.income) / 10) + ' від надходжень' : '');
+    html += card('Готівкою', pct(t.cash_share), 'решта — безготівково');
+    html += '</div>' + moneyChart(m, days);
+    const maxI = Math.max(1, ...m.income.map((x) => x.sum)), maxE = Math.max(1, ...m.expenses.map((x) => x.sum));
+    html += `<div class="two"><div class="card"><h2>Надходження <span>${uah(t.income)}</span></h2><div class="rows">${m.income.map((x) =>
+      rowBar(x.title, uah(x.sum), 100 * Math.max(0, x.sum) / maxI, t.income ? pct(Math.round(1000 * x.sum / t.income) / 10) : '')).join('') || '<p class="msg">Немає</p>'}</div></div>`;
+    html += `<div class="card"><h2>Витрати <span>${uah(t.expense)}</span></h2><div class="rows">${m.expenses.map((x) =>
+      rowBar(x.title, uah(x.sum), 100 * x.sum / maxE, t.expense ? pct(Math.round(1000 * x.sum / t.expense) / 10) : '', true)).join('') || '<p class="msg">Немає</p>'}</div></div></div>`;
+    const maxA = Math.max(1, ...m.accounts.map((x) => x.sum));
+    html += `<div class="two"><div class="card"><h2>Каси й рахунки <span>надходження</span></h2><div class="rows">${m.accounts.map((x) => rowBar(x.title, uah(x.sum), 100 * x.sum / maxA)).join('')}</div></div>`;
+    const team = (r.team || []).filter((x) => x.salary);
+    html += team.length ? `<div class="card"><h2>Виплати майстрам <span>за період</span></h2><table><tr><th></th><th>Вартість послуг</th><th>Виплачено</th><th>%</th></tr>${team.map((x) =>
+      `<tr><td>${esc(x.name)}</td><td>${uah(x.revenue)}</td><td>${uah(x.salary)}</td><td>${pct(x.salary_share)}</td></tr>`).join('')}</table></div></div>` : '</div>';
+    return html;
+  }
+
+  // ---------------------------------------------------------------- team
+  const SORTS = { revenue: 'Гроші', visits: 'Візити', avg: 'Чек', rev_day: 'За день', occupancy: 'Завантаженість', clients: 'Клієнти' };
+  function teamTab(r) {
+    const rows = (r.team || []).slice();
+    if (!rows.length) return '<p class="msg">Немає даних за період</p>';
+    rows.sort((a, b) => (b[sortBy] ?? -1) - (a[sortBy] ?? -1));
+    const sorts = `<div class="scroll">${Object.entries(SORTS).map(([k, v]) => `<button class="chip${k === sortBy ? ' on' : ''}" data-sort="${k}">${v}</button>`).join('')}</div>`;
+    const cards = rows.map((x, i) => `
+      <div class="card person" data-staff="${x.id}">
+        <div class="top"><div class="rank${i === 0 ? ' r1' : ''}">${i + 1}</div><div class="nm">${esc(x.name)}</div>
+          <div class="rv"><b>${uah(x.revenue)}</b><span>${chg(x.revenue, x.revenue_prev)}${pct(x.share)} салону</span></div></div>
+        <div class="stats">
+          <div><small>Візити</small><b>${x.visits}</b><em>${chg(x.visits, x.visits_prev)}</em></div>
+          <div><small>Середній чек</small><b>${uah(x.avg)}</b><em>${chg(x.avg, x.avg_prev)}</em></div>
+          <div><small>За робочий день</small><b>${uah(x.rev_day)}</b><em>${chg(x.rev_day, x.rev_day_prev)}</em></div>
+          <div><small>Завантаженість</small><b>${pct(x.occupancy)}</b><em>${chg(x.occupancy, x.occupancy_prev)}</em></div>
+          <div><small>Днів з візитами</small><b>${x.days}</b></div>
+          <div><small>Клієнти / повторні</small><b>${x.clients} / ${x.repeat}</b></div>
+          <div><small>Нові клієнти</small><b>${x.new_clients ?? '—'}</b></div>
+          <div><small>Онлайн-запис</small><b>${pct(x.online)}</b></div>
+          <div><small>Неявки</small><b>${x.no_show}</b>${x.unmarked ? `<em class="flat">+${x.unmarked} не відм.</em>` : ''}</div>
+          <div><small>Виплачено ЗП</small><b>${x.salary != null ? uah(x.salary) : '—'}</b>${x.salary_share != null ? `<em class="flat">${pct(x.salary_share)}</em>` : ''}</div>
+        </div>
+      </div>`).join('');
+    return `<div class="card" style="padding:10px 12px"><h2 style="margin:0 0 8px">Рейтинг майстрів <span>натисніть — відкриється окремо</span></h2>${sorts}</div>${cards}`;
+  }
+
+  // ---------------------------------------------------------------- games and bot
+  function funTab(d) {
+    let html = '';
+    if (d.games) {
+      const g = d.games.games, ids = Object.keys(GAMES), days = d.games.days;
+      const total = days.map((_, i) => ids.reduce((a, k) => a + (((g[k] || {}).daily || {}).plays || [])[i] || 0, 0));
+      const hub = (g.hub || {}).opens || {};
+      const month = ids.reduce((a, k) => a + (((g[k] || {}).plays || {}).month || 0), 0);
+      const players = ids.reduce((a, k) => a + (((g[k] || {}).players || {}).month || 0), 0);
+      html += '<div class="grid">' + card('Партій за місяць', num(month), 'сьогодні ' + ids.reduce((a, k) => a + (((g[k] || {}).plays || {}).today || 0), 0))
+        + card('Гравців у рейтингах', num(players), 'за місяць, по всіх іграх') + card('Хаб відкривали', num(hub.month || 0), 'сьогодні ' + (hub.today || 0)) + '</div>';
+      const max = Math.max(1, ...total);
+      html += `<div class="card"><h2>Партії по днях <span>усі ігри, ${days.length} днів</span></h2><div class="chart">${total.map((v, i) =>
+        `<div class="b${days[i] === today ? ' today' : ''}" title="${dm(days[i])}: ${v}" style="height:${Math.max(2, Math.round(v / max * 100))}%"></div>`).join('')}</div>
+        <div class="axis"><span>${dm(days[0])}</span><span>${dm(days[days.length - 1])}</span></div></div>`;
+      html += `<div class="card"><h2>Ігри</h2><table><tr><th></th><th>Сьогодні</th><th>Місяць</th><th>Всього</th><th>Гравців</th><th>Рекорд</th></tr>${ids.map((k) => {
+        const x = g[k] || {}; return `<tr><td>${GAMES[k]}</td><td>${(x.plays || {}).today || 0}</td><td>${(x.plays || {}).month || 0}</td><td>${(x.plays || {}).all || 0}</td><td>${(x.players || {}).month || 0}</td><td>${x.best_month ?? '—'}</td></tr>`; }).join('')}</table></div>`;
+    }
+    if (d.bot) {
+      const e = d.bot.events, c = d.bot.chats;
+      const names = { booked: 'Записи', moved: 'Переноси', cancelled: 'Скасування', reminded: 'Нагадування' };
+      html += `<div class="card"><h2>Бот <span>${c.total} клієнтів · активні сьогодні ${c.day} · за 7 днів ${c.week}</span></h2>
+        <table><tr><th></th><th>Сьогодні</th><th>7 днів</th><th>Місяць</th><th>Всього</th></tr>${Object.keys(names).map((k) =>
+        `<tr><td>${names[k]}</td><td>${e[k].today}</td><td>${e[k].week}</td><td>${e[k].month}</td><td>${e[k].all}</td></tr>`).join('')}</table></div>`;
+    }
+    return html || '<p class="msg">Немає даних</p>';
+  }
+
+  // ---------------------------------------------------------------- frame
+  const NOTES = {
+    kpi: 'Виручка, чек, завантаженість і клієнти — зі звіту Altegio; візити, неявки й онлайн-запис — із записів; прибуток і зарплати — з кас Altegio. Порівняння — з таким самим попереднім відрізком.',
+    book: 'Візит — запис зі статусом «клієнт прийшов». Вартість — ціна послуг після знижок. Скасовані записи не рахуються.',
+    money: 'Рух грошей у касах Altegio за датою операції. Перекази між касами не враховуються. Зарплата — те, що виплачено за період, а не нараховано.',
+    team: 'Гроші — вартість наданих послуг. Завантаженість і нові клієнти — зі звіту Altegio. Днів з візитами — дні, коли в майстра був хоча б один візит.',
+    fun: 'Ігри й бот рахуються з 14 листопада 2026.',
+  };
+
+  function tabsFor(d) {
+    if (d.role !== 'admin') return ['kpi', 'book'];
+    return d.staff ? ['kpi', 'book', 'money'] : ['kpi', 'book', 'money', 'team', 'fun'];
   }
 
   function render() {
-    const d = data, b = d.bookings, admin = d.role === 'admin';
+    const d = data, r = d.report, admin = d.role === 'admin', list = tabsFor(d);
+    if (!list.includes(tab)) tab = list[0];
+    $('tabs').innerHTML = list.map((k) => `<button data-tab="${k}" class="${k === tab ? 'on' : ''}">${TABS[k]}</button>`).join('');
+    $('tabs').hidden = false;
     $('upd').textContent = d.generated ? 'оновлено ' + d.generated : '';
-    if (b.error) {
-      $('out').innerHTML = '<p class="msg bad">Altegio зараз не відповідає. Спробуйте за хвилину.</p>' + (admin ? bot(d) + games(d) : '');
-      return;
-    }
-    const c = b.current.totals, p = b.previous.totals, money = c.revenue != null;
-    const one = d.staff && b.current.barbers[0] ? b.current.barbers[0].name : '';
+    $('periods').hidden = tab === 'fun';
+    if (tab === 'fun') $('picker').hidden = true;
+    $('staff').hidden = tab === 'fun' || $('staff').dataset.n < 2;
+    const one = d.staff && r.bookings && r.bookings.current.barbers[0] ? r.bookings.current.barbers[0].name : '';
     $('title').textContent = one || (admin ? 'Дашборд' : 'Моя статистика');
-    let html = `<p class="note">${esc(b.label)}: ${dm(b.current.first)}–${dm(b.current.last)} · порівняння з ${dm(b.previous.first)}–${dm(b.previous.last)}</p><div class="kpis">`;
-    if (money) html += kpi('Виручка', uah(c.revenue), delta(c.revenue, p.revenue) + 'було ' + uah(p.revenue));
-    html += kpi('Візити', num(c.visits), delta(c.visits, p.visits) + `~${c.per_day} на день`);
-    if (money) html += kpi('Середній чек', uah(c.avg_check), delta(c.avg_check, p.avg_check) + 'було ' + uah(p.avg_check));
-    html += kpi('Клієнти', num(c.clients), `повторних ${c.repeat_clients}`);
-    html += kpi('Не прийшли', num(c.no_show), `${c.no_show_rate}% · не відмічено ${c.unmarked}`);
-    html += kpi('Наступні 7 днів', num(b.upcoming.count), b.upcoming.expected != null ? '~' + uah(b.upcoming.expected) : 'записів');
-    html += '</div>' + chart(b);
-    html += `<div class="two">${barbers(b, admin && !d.staff)}${sources(b)}</div>`;
-    html += `<div class="two">${services(b)}${upcoming(b)}</div>` + heat(b);
-    if (admin && !d.staff) html += `<div class="two">${bot(d)}${games(d)}</div>`;
-    $('out').innerHTML = html;
-    $('note').textContent = 'Дані з Altegio: візит — запис зі статусом «клієнт прийшов», виручка — вартість послуг після знижок. ' +
-      'Скасовані записи не рахуються. Дні за київським часом; порівняння — з таким самим попереднім відрізком.';
+    if (r.error && tab !== 'fun') { $('out').innerHTML = '<p class="msg bad">Altegio зараз не відповідає. Спробуйте за хвилину.</p>'; return; }
+    let head = '';
+    if (tab !== 'fun') {
+      const b = r.bookings;
+      head = `<p class="note">${esc(r.label)}: ${dm(b.current.first)}–${dm(b.current.last)} · порівняння з ${dm(b.previous.first)}–${dm(b.previous.last)}</p>`;
+    }
+    const body = { kpi: () => kpiTab(r), book: () => bookTab(r, admin), money: () => moneyTab(r), team: () => teamTab(r), fun: () => funTab(d) }[tab]();
+    $('out').innerHTML = head + body;
+    $('note').textContent = NOTES[tab] || '';
   }
 
   function staffChips() {
     const el = $('staff');
-    if (!data || data.role !== 'admin' || data.bookings.error) { el.hidden = true; return; }
-    if (!staff) el.dataset.list = JSON.stringify(data.bookings.current.barbers.map((r) => [r.id, r.name]));
+    if (!data || data.role !== 'admin' || data.report.error) { el.dataset.n = 0; return; }
+    if (!staff) el.dataset.list = JSON.stringify((data.report.team || data.report.bookings.current.barbers).map((r) => [r.id, r.name]));
     const list = JSON.parse(el.dataset.list || '[]');
-    el.innerHTML = `<button data-s="" class="${staff ? '' : 'on'}">Усі майстри</button>` +
-      list.map(([id, n]) => `<button data-s="${id}" class="${String(id) === staff ? 'on' : ''}">${esc(n)}</button>`).join('');
-    el.hidden = list.length < 2;
+    el.dataset.n = list.length;
+    el.innerHTML = `<button class="chip${staff ? '' : ' on'}" data-s="">Усі майстри</button>` +
+      list.map(([id, n]) => `<button class="chip${String(id) === staff ? ' on' : ''}" data-s="${id}">${esc(n)}</button>`).join('');
   }
 
-  function loginForm(msg) {
-    $('out').innerHTML = `<div class="card login"><label for="key" style="color:var(--muted);font-size:13px">Відкрийте дашборд з бота (/admin → Статистика) або введіть ключ персоналу</label>
-      <input id="key" type="password" autocomplete="off" value="${esc(key)}"><button id="go" type="button">Показати</button>${msg ? `<p class="bad" style="font-size:13px">${msg}</p>` : ''}</div>`;
-    $('go').onclick = () => { key = $('key').value.trim(); store.set('dash.key', key); load(); };
+  function picker() {
+    const el = $('picker');
+    const cur = isMonth(period) ? period : '';
+    el.innerHTML = `<div class="yr"><button data-y="-1" ${pickYear <= FIRST_Y ? 'disabled' : ''} aria-label="Попередній рік">‹</button><span>${pickYear}</span>
+      <button data-y="1" ${pickYear >= NOW_Y ? 'disabled' : ''} aria-label="Наступний рік">›</button></div><div class="ms">${MONTHS.map((m, i) => {
+        const v = `${pickYear}-${String(i + 1).padStart(2, '0')}`, future = pickYear === NOW_Y && i + 1 > NOW_M;
+        return `<button data-month="${v}" class="${v === cur ? 'on' : ''}" ${future ? 'disabled' : ''}>${m}</button>`; }).join('')}</div>`;
   }
+
+  function periodButtons() {
+    document.querySelectorAll('#periods .pill[data-p]').forEach((b) => b.classList.toggle('on', b.dataset.p === period));
+    const pb = $('pickbtn');
+    pb.classList.toggle('on', isMonth(period));
+    pb.textContent = isMonth(period) ? `📅 ${MONTHS_FULL[+period.slice(5) - 1]} ${period.slice(0, 4)}` : '📅 Місяць';
+  }
+
+  function fail(text) { $('tabs').hidden = $('periods').hidden = $('staff').hidden = true; $('out').innerHTML = `<p class="msg">${text}</p>`; }
 
   async function load(fresh) {
-    document.querySelectorAll('#periods button').forEach((b) => b.classList.toggle('on', b.dataset.p === period));
-    if (!initData && !key) { loginForm(); return; }
-    sel = -1;
-    $('out').innerHTML = '<div class="kpis">' + '<div class="skel"></div>'.repeat(6) + '</div><div class="skel" style="height:200px;margin-top:12px"></div>' +
+    periodButtons();
+    if (!initData) { fail('Дашборд відкривається тільки з Telegram-бота Custom True:<br><b>/admin → 📊 Дашборд</b>'); return; }
+    $('periods').hidden = false;
+    sel = msel = -1;
+    $('out').innerHTML = '<div class="grid">' + '<div class="skel"></div>'.repeat(6) + '</div><div class="skel" style="height:200px;margin-top:12px"></div>' +
       '<p class="msg">Збираю дані з Altegio… перше відкриття довгого періоду може тривати до хвилини</p>';
-    const headers = initData ? { 'X-Telegram-Init-Data': initData } : { 'X-Admin-Key': key };
     const q = new URLSearchParams({ p: period });
     if (staff) q.set('staff', staff);
     if (fresh) q.set('fresh', '1');
     let res;
-    try { res = await fetch('/api/dashboard?' + q, { headers }); } catch (e) { $('out').innerHTML = '<p class="msg bad">Немає звʼязку</p>'; return; }
-    if (res.status === 403) {
-      if (initData) $('out').innerHTML = '<p class="msg bad">Дашборд доступний адміністраторам і майстрам команди</p>';
-      else loginForm('Невірний ключ');
-      return;
-    }
-    if (!res.ok) { $('out').innerHTML = `<p class="msg bad">Помилка (${res.status}). Спробуйте ще раз.</p>`; return; }
+    try { res = await fetch('/api/dashboard?' + q, { headers: { 'X-Telegram-Init-Data': initData }, cache: 'no-store' }); } catch (e) { fail('<span class="bad">Немає звʼязку</span>'); return; }
+    if (res.status === 401) { fail('Сесія застаріла. Закрийте дашборд і відкрийте знову з бота: <b>/admin → 📊 Дашборд</b>'); return; }
+    if (res.status === 403) { fail('Доступ лише для адміністраторів і команди Custom True'); return; }
+    if (!res.ok) { fail(`<span class="bad">Помилка (${res.status}). Спробуйте ще раз.</span>`); return; }
     data = await res.json();
     staffChips();
     render();
   }
 
-  $('periods').addEventListener('click', (e) => { const p = e.target.dataset && e.target.dataset.p; if (p) { period = p; store.set('dash.p', p); load(); } });
+  $('periods').addEventListener('click', (e) => {
+    const ds = e.target.dataset || {};
+    if (ds.pick) { const el = $('picker'); el.hidden = !el.hidden; if (!el.hidden) { if (isMonth(period)) pickYear = +period.slice(0, 4); picker(); } return; }
+    if (ds.p) { period = ds.p; store.set('dash.p', ds.p); $('picker').hidden = true; load(); }
+  });
+  $('picker').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b || b.disabled) return;
+    if (b.dataset.y) { pickYear += +b.dataset.y; picker(); return; }
+    if (b.dataset.month) { period = b.dataset.month; store.set('dash.p', period); $('picker').hidden = true; load(); }
+  });
   $('staff').addEventListener('click', (e) => { const s = e.target.dataset && e.target.dataset.s; if (s !== undefined) { staff = s; load(); } });
+  $('tabs').addEventListener('click', (e) => { const t = e.target.dataset && e.target.dataset.tab; if (t) { tab = t; store.set('dash.tab', t); sel = msel = -1; render(); window.scrollTo(0, 0); } });
   $('out').addEventListener('click', (e) => {
-    const bar = e.target.closest('.b'), tab = e.target.closest('[data-m]'), row = e.target.closest('.row.click');
+    const bar = e.target.closest('[data-k="day"] .b'), pair = e.target.closest('.pair'), m = e.target.closest('[data-m]');
+    const srt = e.target.closest('[data-sort]'), person = e.target.closest('.person');
     if (bar) { sel = +bar.dataset.i; render(); }
-    else if (tab) { metric = tab.dataset.m; render(); }
-    else if (row) { staff = row.dataset.staff; load(); window.scrollTo(0, 0); }
+    else if (pair) { msel = +pair.dataset.i; render(); }
+    else if (m) { metric = m.dataset.m; render(); }
+    else if (srt) { sortBy = srt.dataset.sort; store.set('dash.sort', sortBy); render(); }
+    else if (person) { staff = person.dataset.staff; tab = 'kpi'; load(); window.scrollTo(0, 0); }
   });
   load();
 })();

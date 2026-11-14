@@ -39,6 +39,8 @@ class FixtureBackend:
         self.fail_next = None  # (status, message) to simulate an API error once
         self.page_cap = None  # simulate a server that returns fewer rows per page than asked
         self._next_id = 900000001
+        self.transactions = []  # wire-format /transactions items (+ "_loc")
+        self.overall = {}       # (loc, staff_id or None) -> wire-format analytics/overall data
 
     # -- test helpers
 
@@ -65,6 +67,38 @@ class FixtureBackend:
             "comment": comment,
         }
         return appt_id
+
+    def add_transaction(self, location_id, when: datetime, amount, item_id=5, item_title="Services rendered",
+                        account_id=575311, master_id=0, goods=False):
+        self.transactions.append({
+            "_loc": int(location_id), "id": len(self.transactions) + 700000001,
+            "date": when.astimezone(self.tz).strftime("%Y-%m-%d %H:%M:%S"), "amount": amount,
+            "expense": {"id": item_id if item_id else "", "title": item_title, "type": 0},
+            "account": {"id": account_id, "title": "Каса", "type": 0, "is_cash": True},
+            "master": {"id": master_id, "name": "", "position": ""} if master_id else [],
+            "sold_item_type": "goods_transaction" if goods else ("service" if item_id == 5 else None),
+            "record_id": 0, "visit_id": 0, "comment": ""})
+
+    def set_overall(self, location_id, staff_id=None, **values):
+        """values: income, avg_check, occupancy, records, completed, cancelled, new_clients, returning, lost..."""
+        money = lambda v: {"current_sum": "%.2f" % v, "previous_sum": "0", "change_percent": 0, "currency": {}}  # noqa: E731
+        self.overall[(int(location_id), staff_id)] = {
+            "income_total_stats": money(values.get("income", 0)),
+            "income_services_stats": money(values.get("income_services", values.get("income", 0))),
+            "income_goods_stats": money(values.get("income_goods", 0)),
+            "income_average_stats": money(values.get("avg_check", 0)),
+            "income_average_services_stats": money(values.get("avg_check", 0)),
+            "fullness_stats": {"current_percent": values.get("occupancy", 0), "previous_percent": 0, "change_percent": 0},
+            "record_stats": {"current_total_count": values.get("records", 0),
+                             "current_completed_count": values.get("completed", 0),
+                             "current_pending_count": values.get("pending", 0),
+                             "current_canceled_count": values.get("cancelled", 0),
+                             "current_canceled_percent": values.get("cancelled_percent", 0)},
+            "client_stats": {"total_count": values.get("clients_total", 0), "new_count": values.get("new_clients", 0),
+                             "new_percent": values.get("new_percent", 0), "return_count": values.get("returning", 0),
+                             "return_percent": values.get("return_percent", 0), "active_count": values.get("active", 0),
+                             "lost_count": values.get("lost", 0), "lost_percent": values.get("lost_percent", 0)},
+        }
 
     # -- routing
 
@@ -94,6 +128,9 @@ class FixtureBackend:
             ("POST", r"/locations/(\d+)/appointments/(\d+)/attendance", self._attendance),
             ("DELETE", r"/locations/(\d+)/appointments/(\d+)", self._delete),
             ("GET", r"/client/(\d+)/(\d+)", self._client),
+            ("GET", r"/transactions/(\d+)", self._transactions),
+            ("GET", r"/accounts/(\d+)", self._accounts),
+            ("GET", r"/company/(\d+)/analytics/overall/?", self._overall),
         ]
         for method, pattern, fn in routes:
             m = re.fullmatch(pattern, path)
@@ -187,6 +224,26 @@ class FixtureBackend:
         return {"type": "record", "id": str(a["id"]), "attributes": out,
                 "relationships": {"client": {"data": {"type": "client", "id": str(a["client_id"])}
                                              if a["client_id"] else None}}}
+
+    def _transactions(self, params, body, loc):
+        lo, hi = params.get("start_date", ""), params.get("end_date", "9999")
+        rows = [{k: v for k, v in t.items() if k != "_loc"} for t in self.transactions
+                if t["_loc"] == int(loc) and lo <= t["date"][:10] <= hi]
+        count, page = int(params.get("count", 1000)), int(params.get("page", 1))
+        return self._ok(rows[(page - 1) * count: page * count])
+
+    def _accounts(self, params, body, loc):
+        return self._ok([{"id": 575311, "title": "Основная касса", "type": 0, "type_slug": "cash"},
+                         {"id": 575312, "title": "Расчетный счет", "type": 1, "type_slug": "cashless"},
+                         {"id": 587164, "title": "Сейф", "type": 0, "type_slug": "cash"}])
+
+    def _overall(self, params, body, loc):
+        staff = params.get("staff_id")
+        data = self.overall.get((int(loc), int(staff) if staff else None))
+        if data is None:
+            self.set_overall(loc, int(staff) if staff else None)
+            data = self.overall[(int(loc), int(staff) if staff else None)]
+        return self._ok(data)
 
     def _list_appointments(self, params, body, loc):
         # Like the real API: whole days from start_date..end_date (inclusive); `filter[...]` is
