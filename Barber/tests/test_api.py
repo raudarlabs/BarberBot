@@ -16,7 +16,8 @@ from urllib.parse import urlencode
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "api"))
 
-for k in ("UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN", "KV_REST_API_URL", "KV_REST_API_TOKEN"):
+for k in ("UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN", "KV_REST_API_URL", "KV_REST_API_TOKEN",
+          "DATABASE_URL", "POSTGRES_URL", "ARCADE_DATABASE_URL"):
     os.environ.pop(k, None)
 os.environ["ARCADE_DEV"] = "1"  # enables the in-memory Redis
 os.environ["TELEGRAM_BOT_TOKEN"] = "123456:TEST-TOKEN"
