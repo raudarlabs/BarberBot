@@ -563,6 +563,9 @@ initTelegram(goBack);
 applyStaticText();
 bind();
 $('ideaBtn').classList.toggle('hidden', !IDEAS_ENABLED);
+// Opened inside Telegram but without signed launch data (old reply-keyboard button): explain how to get on the board.
+if (tg && tg.platform && tg.platform !== 'unknown' && !tg.initData) $('launchHint').classList.remove('hidden');
+$('launchHintBtn').addEventListener('click', () => openTelegramLink(BOT_URL));
 openHub();
 // Deep link to a game: t.me/<bot>?startapp=snake, or /?game=snake (old /snake and /tetris URLs redirect here)
 const wanted = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || new URLSearchParams(location.search).get('game');
