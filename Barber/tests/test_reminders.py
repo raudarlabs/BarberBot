@@ -203,10 +203,11 @@ class CancelButtonTests(unittest.IsolatedAsyncioTestCase):
         q = await self.press("cxy", text=text)
         self.assertTrue(self.deleted())
         text, markup = q.edits[-1]
-        self.assertTrue(text.endswith(T.CANCELLED))
+        self.assertTrue(text.endswith(T.VISIT_CANCELLED))
         self.assertNotIn(T.CANCEL_ASK, text)
         self.assertIsNone(markup)
-        self.assertEqual(self.client.backend.requests[-1][0], "DELETE")
+        self.assertIn("DELETE", [r[0] for r in self.client.backend.requests])
+        self.assertEqual(self.client.backend.requests[-1][0], "DELETE")  # no extra lookups without admins
 
     async def test_no_keeps_visit_and_restores_buttons(self):
         q = await self.press("cx")
@@ -215,6 +216,23 @@ class CancelButtonTests(unittest.IsolatedAsyncioTestCase):
         text, markup = q.edits[-1]
         self.assertNotIn(T.CANCEL_ASK, text)
         self.assertIn("rm:cx:%d:%d" % (LOC, self.appt_id), [b[1] for b in buttons(markup)])
+
+    async def test_admins_are_notified_of_a_cancellation(self):
+        sent = []
+
+        class Bot:
+            async def send_message(self, chat_id, text, **kw):
+                sent.append((chat_id, text))
+        self.ctx.bot = Bot()
+        os.environ["ADMIN_CHAT_IDS"] = "111"
+        try:
+            await self.press("cxy")
+        finally:
+            os.environ.pop("ADMIN_CHAT_IDS", None)
+        self.assertTrue(self.deleted())
+        self.assertEqual(len(sent), 1)
+        self.assertIn("Скасування", sent[0][1])
+        self.assertIn("+380671234567", sent[0][1])
 
     async def test_other_chat_cannot_cancel(self):
         q = await self.press("cxy", chat=666)

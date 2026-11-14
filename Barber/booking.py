@@ -41,6 +41,7 @@ from telegram.ext import (
     filters,
 )
 
+import admin_notify
 import texts as T
 import voice as V
 from altegio import AltegioError, normalize_phone
@@ -491,6 +492,19 @@ async def on_confirm(update, context):
         await q.edit_message_reply_markup(None)
     except Exception:
         pass
+    try:
+        user = update.effective_user
+        who = (bk.get("name") or admin_notify.user_name(user), bk.get("phone") or appt.client_phone,
+               getattr(user, "username", None))
+        if bk.get("reschedule"):
+            note = admin_notify.moved_text(*who, bk.get("staff_name", ""), T.when(bk["appt"].start), T.when(start))
+        else:
+            note = admin_notify.booked_text(*who, bk.get("staff_name", ""), svc.title, T.when(start),
+                                            locations.get(bk["loc"], ""))
+        if admin_notify.admin_chat_ids():
+            await admin_notify.notify_admins(context, note + (T.MOCK_NOTE if client.is_mock else ""))
+    except Exception:
+        logger.exception("booking %s: admin notification failed", appt.id)
     if client.is_mock:
         text += T.MOCK_NOTE
     return await _finish(update, context, text)

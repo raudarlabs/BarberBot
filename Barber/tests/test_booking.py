@@ -96,6 +96,28 @@ class _FlowBase(unittest.IsolatedAsyncioTestCase):
 
 
 class BookingFlowTests(_FlowBase):
+    async def test_admins_are_notified_of_a_new_booking(self):
+        sent = []
+
+        class Bot:
+            async def send_message(self, chat_id, text, **kw):
+                sent.append((chat_id, text))
+        self.ctx.bot = Bot()
+        os.environ["ADMIN_CHAT_IDS"] = "111, 222"
+        try:
+            await self.walk_to_time()
+            await self.press(booking.on_time, "bk:t:1500")
+            own = Contact("+380 67 123 45 67", "Тарас", last_name="Коваль", user_id=USER)
+            await booking.on_contact(FakeUpdate(self.chat, USER, message=FakeMessage(self.chat, contact=own)), self.ctx)
+            state, q = await self.press(booking.on_confirm, "bk:ok")
+        finally:
+            os.environ.pop("ADMIN_CHAT_IDS", None)
+        self.assertEqual(state, ConversationHandler.END)
+        self.assertEqual([c for c, _ in sent], [111, 222])
+        text = sent[0][1]
+        for part in ("Новий запис", "Тарас Коваль", "+380671234567", "Ігор Халай", "15:00"):
+            self.assertIn(part, text)
+
     async def test_full_booking_with_contact_share(self):
         await self.walk_to_time()
         state, q = await self.press(booking.on_time, "bk:t:1500")
@@ -164,6 +186,7 @@ class BookingFlowTests(_FlowBase):
         state, q = await self.press(booking.on_cancel, "bk:x")
         self.assertEqual(state, ConversationHandler.END)
         self.assertEqual(self.chat.sent[-1][0], T.CANCELLED)
+        self.assertIn("не створено", T.CANCELLED)  # leaving the flow is not "visit cancelled"
         self.assertEqual(self.backend.appointments, {})
 
     async def test_single_location_skips_picker(self):

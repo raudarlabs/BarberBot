@@ -24,6 +24,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest, Forbidden, TelegramError
 from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes
 
+import admin_notify
 import texts as T
 from altegio import AltegioError, Appointment
 
@@ -279,9 +280,32 @@ async def on_cancel_visit(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await q.answer(T.CANT_CHANGE, show_alert=True)
         return
     logger.info("visit %s/%s cancelled by chat %s", loc, appt_id, update.effective_chat.id)
-    await q.answer(T.CANCELLED)
     try:
-        await q.edit_message_text(text + "\n\n" + T.CANCELLED, reply_markup=None)
+        user = update.effective_user
+        if not admin_notify.admin_chat_ids():
+            raise StopIteration  # no admins configured: skip the extra Altegio lookup
+        staff = appt.staff_name
+        if not staff:
+            try:
+                staff = {s.id: s.name for s in await client.list_staff(loc)}.get(appt.staff_id, "")
+            except AltegioError:
+                staff = ""
+        phone = appt.client_phone or await links.phone_for_chat(update.effective_chat.id) or ""
+        if not phone and appt.client_id:
+            try:
+                phone = await client.get_client_phone(loc, appt.client_id)
+            except AltegioError:
+                phone = ""
+        await admin_notify.notify_admins(context, admin_notify.cancelled_text(
+            appt.client_name or admin_notify.user_name(user), phone,
+            getattr(user, "username", None), staff, appt.service_titles, T.when(appt.start)))
+    except StopIteration:
+        pass
+    except Exception:
+        logger.exception("cancel %s/%s: admin notification failed", loc, appt_id)
+    await q.answer(T.VISIT_CANCELLED)
+    try:
+        await q.edit_message_text(text + "\n\n" + T.VISIT_CANCELLED, reply_markup=None)
     except BadRequest:
         pass
 
