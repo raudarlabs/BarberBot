@@ -45,6 +45,7 @@ from telegram.ext import (
 
 import admin_notify
 import team
+import visit_calendar
 import texts as T
 import voice as V
 import waitlist
@@ -870,8 +871,8 @@ async def on_confirm(update, context):
     except Exception:
         logger.exception("booking %s: saving reminder links failed", appt.id)
     await q.answer()
-    try:
-        await q.edit_message_reply_markup(None)
+    try:  # the summary stays above the "done" message, now with "📅 Додати в календар"
+        await q.edit_message_reply_markup(visit_calendar.markup(bk["loc"], appt.id))
     except Exception:
         pass
     await admin_notify.count_event("moved" if bk.get("reschedule") else "booked")

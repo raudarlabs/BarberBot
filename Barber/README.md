@@ -159,6 +159,12 @@ If the barber left, the invitation offers any barber.
 A menu button: the client's latest visit (remembered from bookings and the daily pass, else found
 in the last 3 months of Altegio by phone) → same barber and service → calendar.
 
+### 📅 Додати в календар (visit_calendar.py)
+After a booking or a move the summary gets **📅 Додати в календар**, and so does every visit in
+«Мій запис». It sends a `.ics` file (iPhone / Android open it in the phone's calendar, with a 2-hour
+alert) and, on the same message, a Google Calendar link. The visit is read from Altegio at that
+moment, so a moved visit gets its new time; only the chat the visit is linked to can get it.
+
 ### AI haircut → booking
 Each of the 6 AI haircut photos has **✂️ Записатися на цю стрижку**: a normal booking whose summary
 and Altegio comment carry the haircut, and the photo goes to the barber (if linked) and the shop chat.

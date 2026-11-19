@@ -32,6 +32,7 @@ from telegram.ext import CallbackQueryHandler, ContextTypes, MessageHandler, fil
 
 import texts as T
 from altegio import AltegioError, normalize_phone
+import visit_calendar
 from reminders import move_confirm_buttons
 
 logger = logging.getLogger(__name__)
@@ -254,7 +255,8 @@ async def show_visits(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     for a, address in visits[:MAX_VISITS]:
         service = " · " + a.service_titles if a.service_titles else ""
         text = T.VISIT.format(staff=a.staff_name, service=service, when=T.when(a.start), location=address)
-        await _reply(update, text, move_confirm_buttons(a))
+        rows = list(move_confirm_buttons(a).inline_keyboard) + [[visit_calendar.button(a.location_id, a.id)]]
+        await _reply(update, text, InlineKeyboardMarkup(rows))
 
 
 async def on_contact_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

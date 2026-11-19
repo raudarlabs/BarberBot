@@ -444,3 +444,14 @@ class CalendarTests(_FlowBase):
 
 def _fake_days(month, only):  # side effect of an AsyncMock: a plain function's result is awaited for us
     return [month.replace(day=10)] if month == only else []
+
+
+class CalendarButtonAfterBookingTests(_FlowBase):
+    async def test_summary_gets_add_to_calendar(self):
+        await self.links.link(USER, "380671234567")
+        await self.walk_to_time()
+        await self.press(booking.on_time, "bk:t:1500")
+        state, q = await self.press(booking.on_confirm, "bk:ok")
+        self.assertEqual(state, ConversationHandler.END)
+        appt_id = max(self.backend.appointments)
+        self.assertEqual(buttons(q.edits[-1][1]), [(T.ICS_BUTTON, "ics:%d:%d" % (LOC, appt_id))])

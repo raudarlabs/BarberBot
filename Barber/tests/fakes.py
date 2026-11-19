@@ -14,6 +14,10 @@ class FakeChat:
     async def send_action(self, action, **kw):
         pass
 
+    async def send_document(self, document, caption=None, reply_markup=None, **kw):
+        self.documents = getattr(self, "documents", [])
+        self.documents.append((document, caption, reply_markup))
+
 
 class FakeQuery:
     def __init__(self, data, message_text=""):

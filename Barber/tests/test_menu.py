@@ -122,7 +122,8 @@ class MenuScreenTests(unittest.IsolatedAsyncioTestCase):
         visit_text, visit_kb = self.chat.sent[-1]
         self.assertIn("Ігор Халай · Чоловіча стрижка", visit_text)
         self.assertEqual([b[1] for b in buttons(visit_kb)],
-                         ["rm:ok:%d:%d" % (LOC, appt_id), "rm:mv:%d:%d" % (LOC, appt_id), "rm:cx:%d:%d" % (LOC, appt_id)])
+                         ["rm:ok:%d:%d" % (LOC, appt_id), "rm:mv:%d:%d" % (LOC, appt_id), "rm:cx:%d:%d" % (LOC, appt_id),
+                          "ics:%d:%d" % (LOC, appt_id)])
         self.assertEqual(await self.links.chat_for_appointment(LOC, appt_id), USER)  # buttons work here
         self.assertEqual(sum(1 for t, _ in self.chat.sent if t.startswith("💈")), 1)  # not the other client's
 
