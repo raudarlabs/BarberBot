@@ -184,16 +184,20 @@ class FixtureBackend:
                           "datetime": s.isoformat()} for s in starts])
 
     def _book_dates(self, params, body, loc):
+        """Like the real API: only the calendar month of `date` (default: this month), from today."""
         staff = params.get("staff_id")
         today = datetime.now(self.tz).date()
+        ref = date.fromisoformat(params["date"][:10]) if params.get("date") else today
         working, booking = [], []
-        for i in range(62):
-            d = today + timedelta(days=i)
-            if not self._works(d):
+        d = date(ref.year, ref.month, 1)
+        while d.month == ref.month:
+            day, d = d, d + timedelta(days=1)
+            if day < today or not self._works(day):
                 continue
-            working.append(d.isoformat())
-            if staff and self._book_times(params, body, loc, staff, d.isoformat())[1]["data"]:
-                booking.append(d.isoformat())
+            d_iso = day.isoformat()
+            working.append(d_iso)
+            if staff and self._book_times(params, body, loc, staff, d_iso)[1]["data"]:
+                booking.append(d_iso)
         return self._ok({"booking_dates": booking, "working_dates": working})
 
     def _seances(self, params, body, loc, staff, day):

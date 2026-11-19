@@ -257,3 +257,25 @@ class ReviewFixTests(unittest.IsolatedAsyncioTestCase):
         await client.aclose()
         self.assertEqual(body["services"], [{"id": HAIRCUT_IGOR, "cost": 720, "first_cost": 800, "discount": 10}])
         self.assertEqual((body["comment"], body["api_id"], body["attendance"]), ("VIP", "tg-1-2", 2))
+
+
+class BookDatesMonthTests(unittest.IsolatedAsyncioTestCase):
+    """/book_dates answers one calendar month (like the widget); the window can cross months."""
+
+    async def test_window_crosses_into_next_month(self):
+        client = fixture_client()
+        today = datetime.now(TZ).date()
+        days = await client.booking_dates(297851, IGOR, [HAIRCUT_IGOR], today, 45)
+        months = [r[2].get("date") for r in client.backend.requests if r[1].startswith("/book_dates/")]
+        await client.aclose()
+        self.assertGreaterEqual(len(months), 2)  # one request per month
+        self.assertTrue(all(m.endswith("-01") for m in months))
+        self.assertTrue(any(d.month != today.month for d in days))  # next month is offered
+        self.assertTrue(all(today <= d < today + timedelta(days=45) for d in days))
+
+    async def test_fixture_is_month_limited(self):
+        client = fixture_client()
+        today = datetime.now(TZ).date()
+        _, payload = client.backend._book_dates({"staff_id": str(IGOR)}, None, "297851")
+        await client.aclose()
+        self.assertTrue(all(date.fromisoformat(d).month == today.month for d in payload["data"]["booking_dates"]))

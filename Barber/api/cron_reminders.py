@@ -23,6 +23,7 @@ for p in (ROOT_DIR, API_DIR):
 from telegram.ext import Application  # noqa: E402
 
 import bot  # noqa: E402
+import comeback  # noqa: E402
 import reminders  # noqa: E402
 import reviews  # noqa: E402
 import team  # noqa: E402
@@ -59,6 +60,11 @@ async def run_once() -> dict:
             except Exception:
                 logger.exception("reviews failed")
                 out["reviews_asked"] = "error"
+            try:  # once a day, only with COMEBACK_ENABLED=1
+                out["comeback_invited"] = await comeback.run(client, app.bot_data["links"], locations, app.bot)
+            except Exception:
+                logger.exception("comeback failed")
+                out["comeback_invited"] = "error"
             try:
                 out["waitlist_told"] = await waitlist.run(client, app.bot_data["links"], app.bot)
             except Exception:

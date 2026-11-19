@@ -10,7 +10,7 @@ Contracts come from the Altegio API catalog (base https://api.alteg.io/api/v1):
     GET  /locations/{loc}/services?staff_id=               a barber's services (JSON:API)
     GET  /timetable/dates/{loc}/{date}?staff_id=           working dates
     GET  /timetable/seances/{loc}/{staff}/{date}           5-minute grid: [{time, is_free}]
-    GET  /book_dates/{loc}?staff_id=&service_ids[]=        online-bookable days (widget calendar)
+    GET  /book_dates/{loc}?staff_id=&service_ids[]=&date=  online-bookable days of date's MONTH (widget calendar)
     GET  /book_times/{loc}/{staff}/{date}?service_ids[]=   online-bookable start times
     GET  /locations/{loc}/appointments                     start_date, end_date (days), include=client
     GET  /locations/{loc}/appointments/{id}
@@ -477,21 +477,29 @@ class HttpAltegioClient:
     async def booking_dates(self, location_id: int, staff_id: int, service_ids: Sequence[int],
                             start: date, days: int) -> List[date]:
         """Days a client can book online (the Altegio booking widget's calendar): free time for these
-        services under the location's online-booking rules — not merely the barber's working days."""
+        services under the location's online-booking rules — not merely the barber's working days.
+
+        Like the widget calendar, /book_dates answers ONE calendar month — the month of `date`,
+        the current month when it is left out — so a window that crosses into the next month
+        needs one request per month."""
         params = {"staff_id": staff_id}
         if service_ids:
             params["service_ids[]"] = [int(x) for x in service_ids]
-        data, _ = await self._request("GET", "/book_dates/%d" % location_id, params=params)
-        raw = data.get("booking_dates") if isinstance(data, dict) else _as_list(data)
         last = start + timedelta(days=days - 1)
         out = []
-        for d in raw or []:
-            try:
-                dd = date.fromisoformat(str(d)[:10])
-            except ValueError:
-                continue
-            if start <= dd <= last:
-                out.append(dd)
+        month = date(start.year, start.month, 1)
+        while month <= last:
+            data, _ = await self._request("GET", "/book_dates/%d" % location_id,
+                                          params={**params, "date": month.isoformat()})
+            raw = data.get("booking_dates") if isinstance(data, dict) else _as_list(data)
+            for d in raw or []:
+                try:
+                    dd = date.fromisoformat(str(d)[:10])
+                except ValueError:
+                    continue
+                if start <= dd <= last:
+                    out.append(dd)
+            month = (month.replace(day=28) + timedelta(days=4)).replace(day=1)  # first of next month
         return sorted(set(out))
 
     async def booking_times(self, location_id: int, staff_id: int, day: date,

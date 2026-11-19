@@ -144,6 +144,17 @@ the phone with the contact button, so a misheard phrase never books anything. Vo
 `OPENAI_API_KEY` is set; `VOICE_BOOKING=0` turns it off. Voice notes go to OpenAI, like the
 photos already do for hairstyle suggestions.
 
+### "Time for a haircut" (comeback.py)
+With `COMEBACK_ENABLED=1`, once a day (12:00–20:00 Kyiv, inside the 10-minute cron) the bot writes
+to clients whose last visit was `COMEBACK_DAYS` (30) days ago, if their Telegram is linked and they
+have no later or upcoming visit: **🔁 Повторити: Ігор · Чоловіча стрижка** opens the day picker for
+the same barber and service (only the time is left), **👥 Інший майстер або послуга**, **🔕 Не
+нагадувати**. Once per visit, at most once per chat in 3 weeks; `/stop_reminders` stops it too. If
+the barber left, the invitation offers any barber.
+
+The day picker asks Altegio's `/book_dates` once per calendar month in the window: that endpoint
+answers a single month (the widget's calendar), so asking once showed only the current month.
+
 ### Reminders
 Altegio has no webhooks, so a JobQueue job polls every `REMINDER_INTERVAL` seconds (default
 600). For each location it lists the next 24 h of appointments and sends, once per visit time:
@@ -176,6 +187,9 @@ ALTEGIO_LOCATION_IDS=297851        # comma-separated, shown in this order
 # REMINDER_INTERVAL=600
 # ALTEGIO_MOCK=1                   # no tokens: run against fixtures/altegio.json
 # VOICE_BOOKING=0                  # turn voice booking off
+# BOOKING_DAYS_AHEAD=30            # how far ahead the day picker goes (Altegio's online-booking horizon still applies)
+# COMEBACK_ENABLED=1               # "time for a haircut" invitations a month after the last visit (off by default)
+# COMEBACK_DAYS=30
 # CHAT_MENU_BUTTON=booking         # button left of the message field: booking (default) | arcade | none
 # BOOKING_WIDGET_URL=https://n308628.alteg.io/company/297851/personal/menu?o=
 # CHAT_MENU_BOOKING_TEXT=Записатись

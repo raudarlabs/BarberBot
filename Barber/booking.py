@@ -19,6 +19,7 @@ Needs in application.bot_data:
 from __future__ import annotations
 
 import logging
+import os
 import time
 import warnings
 from datetime import date, datetime, timedelta
@@ -52,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 LOC, STAFF, SERVICE, DAY, TIME, PHONE, CONFIRM, ANY = range(8)
 ANY_OPTIONS = 6  # "any barber": how many earliest options to offer
-DAYS_AHEAD = 14
+DAYS_AHEAD = int(os.getenv("BOOKING_DAYS_AHEAD", "30"))  # Altegio's online-booking horizon still applies
 MAX_TIMES = 88  # 22 rows of 4 + nav row stays under Telegram's 100-button limit
 
 
@@ -413,6 +414,53 @@ async def start_with_staff(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["bk"] = {"loc": loc, "staff_id": staff_id, "staff_name": names[staff_id],
                                "staff_names": names}
     return await show_services(update, context)
+
+
+async def start_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """cb:rp:{loc}:{past appointment} from the "time for a haircut" invitation (comeback.py):
+    same barber and same service as that visit, straight to the day picker."""
+    client, links, locations = _deps(context)
+    q = update.callback_query
+    try:
+        _, _, loc, appt_id = q.data.split(":")
+        loc, appt_id = int(loc), int(appt_id)
+    except ValueError:
+        await q.answer()
+        return None
+    if client is None or loc not in locations:
+        await q.answer(T.UNAVAILABLE, show_alert=True)
+        return None
+    if await links.chat_for_appointment(loc, appt_id) != update.effective_chat.id:
+        await q.answer(T.NOT_YOURS, show_alert=True)
+        return None
+    try:
+        past = await client.get_appointment(loc, appt_id)
+        names = {s.id: s.name for s in await client.list_staff(loc)}
+    except AltegioError as e:
+        return await _api_failed(update, context, e)
+    await q.answer()
+    try:
+        await q.edit_message_reply_markup(None)  # keep the invitation text, drop its buttons
+    except Exception:
+        pass
+    here = _NoCallback(update)
+    if past.staff_id not in names:  # the barber left or is hidden: pick another one
+        context.user_data["bk"] = {"loc": loc}
+        staff = past.staff_name or "—"
+        await update.effective_chat.send_message(T.COMEBACK_STAFF_GONE.format(staff=staff))
+        return await show_staff(here, context, back=None)
+    bk = context.user_data["bk"] = {"loc": loc, "staff_id": past.staff_id, "staff_name": names[past.staff_id],
+                                    "staff_names": names}
+    try:
+        services = await client.list_services(loc, past.staff_id)
+    except AltegioError as e:
+        return await _api_failed(update, context, e)
+    bk["services"] = {s.id: s for s in services}
+    svc = next((s for s in services if s.id in past.service_ids), None)
+    if svc is None:  # that service is no longer offered: choose one
+        return await show_services(here, context)
+    bk.update(service_id=svc.id, duration=svc.duration)
+    return await show_days(here, context)
 
 
 async def start_reschedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -897,6 +945,7 @@ def build_handler(persistent: bool = False) -> ConversationHandler:
             CallbackQueryHandler(start_reschedule, pattern=r"^rm:mv:"),
             CallbackQueryHandler(start_booking, pattern=r"^bk:new$"),
             CallbackQueryHandler(start_with_staff, pattern=r"^bk:go:\d+:\d+$"),
+            CallbackQueryHandler(start_repeat, pattern=r"^cb:rp:\d+:\d+$"),
             CallbackQueryHandler(start_on_day, pattern=r"^bk:wd:\d+:\d+:\d+:\d{8}$"),
             voice,
         ],
