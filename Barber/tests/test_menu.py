@@ -161,8 +161,8 @@ class ArcadeUrlTests(unittest.TestCase):
         from config import arcade_webapp_url
         base = arcade_webapp_url({"SNAKE_WEBAPP_URL": "https://barber-psi-ochre.vercel.app/snake_app.html"})
         urls = {b.text: b.web_app.url for row in menu.games_markup(base).inline_keyboard for b in row}
-        self.assertEqual(urls["🧩 Укладка"], "https://barber-psi-ochre.vercel.app/?game=blocks")
-        self.assertEqual(urls["💨 Фен-пілот"], "https://barber-psi-ochre.vercel.app/?game=dryer")
+        self.assertEqual(urls["👷 Прораб"], "https://barber-psi-ochre.vercel.app/?game=blocks")
+        self.assertEqual(urls["🔥 Фенікс"], "https://barber-psi-ochre.vercel.app/?game=dryer")
         self.assertEqual(urls[T.GAMES_HUB_BUTTON], "https://barber-psi-ochre.vercel.app/")
 
 

@@ -11,7 +11,7 @@ import beard from './games/beard.js';
 import snake from './games/snake.js';
 import blocks from './games/blocks.js';
 
-const GAMES = [dryer, fade, beard, snake, blocks];
+const GAMES = [snake, blocks, dryer, fade, beard];
 const byId = Object.fromEntries(GAMES.map((g) => [g.id, g]));
 
 const $ = (id) => document.getElementById(id);

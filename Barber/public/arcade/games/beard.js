@@ -270,11 +270,11 @@ class BeardGame {
 
 export default {
   id: 'beard',
-  emoji: '🥷',
+  emoji: '🪒',
   tile: ['#9a5cf0', '#5a2bb5'],
   lives: LIVES,
   isNew: true,
-  title: { uk: 'Борода-ніндзя', en: 'Beard Ninja' },
+  title: { uk: 'Бородоріз', en: 'Beardslayer' },
   desc: {
     uk: 'Борода росте швидше, ніж ти думаєш.',
     en: 'Beards grow faster than you think.',

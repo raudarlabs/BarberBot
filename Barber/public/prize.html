@@ -39,7 +39,7 @@
   </div>
 </main>
 <script>
-  const GAMES = { dryer: 'Фен-пілот', fade: 'Ідеальний фейд', beard: 'Борода-ніндзя', snake: 'Змійка', blocks: 'Укладка' };
+  const GAMES = { snake: 'Пітон', blocks: 'Прораб', dryer: 'Фенікс', fade: 'Фейдзілла', beard: 'Бородоріз' };
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   try { $('key').value = sessionStorage.getItem('prizeKey') || ''; } catch (e) {}

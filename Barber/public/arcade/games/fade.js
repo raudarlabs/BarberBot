@@ -339,11 +339,11 @@ class FadeGame {
 
 export default {
   id: 'fade',
-  emoji: '💈',
+  emoji: '🦖',
   tile: ['#f0c24b', '#b2801c'],
   lives: LIVES,
   isNew: true,
-  title: { uk: 'Ідеальний фейд', en: 'Perfect Fade' },
+  title: { uk: 'Фейдзілла', en: 'Fadezilla' },
   desc: {
     uk: 'Різниця між «норм» і «ідеально» — пів міліметра.',
     en: 'The gap between “fine” and “perfect” is half a millimetre.',

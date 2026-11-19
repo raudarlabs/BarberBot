@@ -260,11 +260,11 @@ class DryerGame {
 
 export default {
   id: 'dryer',
-  emoji: '💨',
+  emoji: '🔥',
   tile: ['#ff6b5b', '#c2302a'],
   lives: 0,
   isNew: true,
-  title: { uk: 'Фен-пілот', en: 'Dryer Pilot' },
+  title: { uk: 'Фенікс', en: 'Phoenix' },
   desc: {
     uk: 'Гарячого повітря вистачає. Головне — не врізатися.',
     en: 'Plenty of hot air. Just don’t crash.',

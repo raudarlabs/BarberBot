@@ -39,11 +39,11 @@ logger = logging.getLogger(__name__)
 
 # id -> (emoji, title); ids match public/arcade/games/*.js and the ?game= deep link.
 GAMES = [
-    ("dryer", "💨", "Фен-пілот"),
-    ("fade", "💈", "Ідеальний фейд"),
-    ("beard", "🥷", "Борода-ніндзя"),
-    ("snake", "🐍", "Змійка"),
-    ("blocks", "🧩", "Укладка"),
+    ("snake", "🐍", "Пітон"),
+    ("blocks", "👷", "Прораб"),
+    ("dryer", "🔥", "Фенікс"),
+    ("fade", "🦖", "Фейдзілла"),
+    ("beard", "🪒", "Бородоріз"),
 ]
 VISITS_DAYS = 30
 MAX_VISITS = 5

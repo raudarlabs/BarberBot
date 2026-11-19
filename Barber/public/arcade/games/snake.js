@@ -237,7 +237,7 @@ export default {
   emoji: '🐍',
   tile: ['#34d27a', '#14864a'],
   controls: null, // full-screen board, swipe only (arrow keys still work on desktop)
-  title: { uk: 'Змійка', en: 'Snake' },
+  title: { uk: 'Пітон', en: 'Python' },
   desc: {
     uk: 'Ніхто не народжується з великим пітоном. Його вирощують.',
     en: 'Nobody is born with a big python. You grow it.',

@@ -33,8 +33,8 @@ import _kv  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-GAME_NAMES = {"dryer": "Фен-пілот", "fade": "Ідеальний фейд", "beard": "Борода-ніндзя",
-              "snake": "Змійка", "blocks": "Укладка"}
+GAME_NAMES = {"snake": "Пітон", "blocks": "Прораб", "dryer": "Фенікс",
+              "fade": "Фейдзілла", "beard": "Бородоріз"}
 MIN_WINDOW_MINUTES = 30
 MAX_MESSAGE = 4000  # Telegram's limit is 4096
 

@@ -56,11 +56,11 @@ Five games in one hub, styled after the shop's new look (warm black wall, wine-r
 
 | Game | Mechanic | Scoring |
 |------|----------|---------|
-| Фен-пілот | one-tap flight between barber poles | +1 per pole, +2 golden comb |
-| Ідеальний фейд | stop the clipper inside the gold band | perfect 10 (+streak), clean 6, okay 3; 3 lives |
-| Борода-ніндзя | swipe to slice beard tufts, avoid lotion | +1 tuft, +5 golden, combo bonus; 3 lives |
-| Змійка | classic snake, full-screen, swipe to turn | +10 food, +30 golden comb |
-| Укладка | falling-blocks puzzle | 10/30/50/80 per 1–4 rows × level |
+| Фенікс | one-tap flight between barber poles | +1 per pole, +2 golden comb |
+| Фейдзілла | stop the clipper inside the gold band | perfect 10 (+streak), clean 6, okay 3; 3 lives |
+| Бородоріз | swipe to slice beard tufts, avoid lotion | +1 tuft, +5 golden, combo bonus; 3 lives |
+| Пітон | classic snake, full-screen, swipe to turn | +10 food, +30 golden comb |
+| Прораб | falling-blocks puzzle | 10/30/50/80 per 1–4 rows × level |
 
 Shared engine: crisp canvas at device pixel ratio, fixed-step loop, auto-pause when Telegram
 is minimised, synth sound with mute, haptics, Telegram back button, safe areas.

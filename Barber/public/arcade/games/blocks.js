@@ -152,7 +152,7 @@ class BlocksGame {
       const pts = LINE_POINTS[n] * this.level;
       const midY = this.oy + (full.reduce((a, b) => a + b, 0) / n + 0.5) * this.cell;
       this.g.addScore(pts, this.ox + (W / 2) * this.cell, midY, '+' + pts, n === 4 ? COLORS.goldHi : undefined);
-      if (n >= 2) this.g.float(this.ox + (W / 2) * this.cell, midY - 30, ['', '', 'Double!', 'Triple!', 'Укладка! ×4'][n], COLORS.gold, 18);
+      if (n >= 2) this.g.float(this.ox + (W / 2) * this.cell, midY - 30, ['', '', 'Double!', 'Triple!', 'Прораб! ×4'][n], COLORS.gold, 18);
       this.g.sfx.play(n === 4 ? 'bonus' : 'clear');
       this.g.haptic(n === 4 ? 'heavy' : 'medium');
       for (const row of full) for (let x = 0; x < W; x++) {
@@ -344,10 +344,10 @@ class BlocksGame {
 
 export default {
   id: 'blocks',
-  emoji: '🧩',
+  emoji: '👷',
   tile: ['#4a86ff', '#1c44c6'],
   controls: 'blocks',
-  title: { uk: 'Укладка', en: 'Stacker' },
+  title: { uk: 'Прораб', en: 'Foreman' },
   desc: {
     uk: 'Всі хочуть довгу паличку. Не всім вона дістається.',
     en: 'Everyone wants the long bar. Not everyone gets it.',
