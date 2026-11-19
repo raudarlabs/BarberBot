@@ -51,9 +51,10 @@ MAX_VISITS = 5
 def main_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(T.BOOK_BUTTON), KeyboardButton(T.MENU_VISITS)],
-            [KeyboardButton(T.MENU_STYLE), KeyboardButton(T.MENU_GAMES)],
-            [KeyboardButton(T.MENU_PRICES), KeyboardButton(T.MENU_CONTACTS)],
+            [KeyboardButton(T.BOOK_BUTTON), KeyboardButton(T.MENU_REPEAT)],
+            [KeyboardButton(T.MENU_VISITS), KeyboardButton(T.MENU_STYLE)],
+            [KeyboardButton(T.MENU_GAMES), KeyboardButton(T.MENU_PRICES)],
+            [KeyboardButton(T.MENU_CONTACTS)],
         ],
         resize_keyboard=True,
         is_persistent=True,
@@ -267,8 +268,12 @@ async def on_contact_link(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     await links.link(update.effective_chat.id, normalize_phone(contact.phone_number))
     await update.message.reply_text(T.PHONE_SAVED, reply_markup=_menu(context))
-    if context.user_data.pop("after_contact", None) == "visits":
+    after = context.user_data.pop("after_contact", None)
+    if after == "visits":
         await show_visits(update, context)
+    elif after == "repeat":  # the repeat booking is a conversation entry point: offer it as a button
+        await _reply(update, T.REPEAT_AFTER_PHONE, InlineKeyboardMarkup(
+            [[InlineKeyboardButton(T.MENU_REPEAT, callback_data="bk:last")]]))
 
 
 # ------------------------------------------------------------------ wiring

@@ -28,8 +28,8 @@ class StaticTests(unittest.TestCase):
     def test_keyboard_layout(self):
         kb = menu.main_menu_keyboard()
         labels = [[b.text for b in row] for row in kb.keyboard]
-        self.assertEqual(labels, [[T.BOOK_BUTTON, T.MENU_VISITS], [T.MENU_STYLE, T.MENU_GAMES],
-                                  [T.MENU_PRICES, T.MENU_CONTACTS]])
+        self.assertEqual(labels, [[T.BOOK_BUTTON, T.MENU_REPEAT], [T.MENU_VISITS, T.MENU_STYLE],
+                                  [T.MENU_GAMES, T.MENU_PRICES], [T.MENU_CONTACTS]])
         self.assertTrue(all(b.web_app is None for row in kb.keyboard for b in row))  # arcade only inline
         self.assertTrue(kb.is_persistent)
 

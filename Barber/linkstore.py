@@ -14,6 +14,7 @@ Keys (all under "bb:"):
     bb:sent:{appointment_id}:{kind} -> "1"          reminder already sent (4 days)
     bb:optout:{chat_id}             -> "1"          /stop_reminders; cleared by sharing the phone again
     bb:cid:{loc}:{phone}            -> client_id    Altegio client id learned from bookings (90 days)
+    bb:last:{chat_id}               -> "loc:appt"   the chat's latest visit, for "Як минулого разу"
 """
 from __future__ import annotations
 
@@ -109,6 +110,20 @@ class LinkStore:
     async def client_id_for(self, location_id: int, phone: str):
         v = (await self._pipe(["GET", "bb:cid:%d:%s" % (location_id, phone)]))[0] if phone else None
         return int(v) if v else None
+
+    # -- the chat's latest visit (for "🔁 Як минулого разу")
+
+    async def remember_last(self, chat_id: int, location_id: int, appointment_id: int) -> None:
+        await self._pipe(["SET", "bb:last:%d" % chat_id, "%d:%d" % (location_id, appointment_id), "EX", 400 * 86400])
+
+    async def last_for(self, chat_id: int):
+        """(location_id, appointment_id) of the chat's latest known visit, or None."""
+        v = (await self._pipe(["GET", "bb:last:%d" % chat_id]))[0]
+        try:
+            loc, appt = str(v).split(":")
+            return int(loc), int(appt)
+        except (TypeError, ValueError):
+            return None
 
     # -- reminder dedupe
 

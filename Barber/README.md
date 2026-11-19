@@ -128,7 +128,8 @@ ALTEGIO_MOCK=1 python bot.py  # booking + reminders against the fixture (needs T
 1. **Location**: skipped when only one is configured.
 2. **Barber**: the ones Altegio shows for online booking, in Altegio's order.
 3. **Service**: that barber's own services and prices (each barber has a personal category).
-4. **Day**: the barber's working days, next 14 days.
+4. **Day**: a month calendar (◀ ▶ between months, up to `BOOKING_DAYS_AHEAD` = 60 days): free days
+   are numbers, the rest dots. It opens on the first month that has free days.
 5. **Time**: start times where the whole service fits, every 15 min, at least 30 min from now.
 6. **Phone**: the client taps "📱 Поділитися номером" (only their own contact is accepted).
    The number is remembered, so next time this step is skipped.
@@ -145,12 +146,22 @@ the phone with the contact button, so a misheard phrase never books anything. Vo
 photos already do for hairstyle suggestions.
 
 ### "Time for a haircut" (comeback.py)
-With `COMEBACK_ENABLED=1`, once a day (12:00–20:00 Kyiv, inside the 10-minute cron) the bot writes
-to clients whose last visit was `COMEBACK_DAYS` (30) days ago, if their Telegram is linked and they
-have no later or upcoming visit: **🔁 Повторити: Ігор · Чоловіча стрижка** opens the day picker for
-the same barber and service (only the time is left), **👥 Інший майстер або послуга**, **🔕 Не
-нагадувати**. Once per visit, at most once per chat in 3 weeks; `/stop_reminders` stops it too. If
-the barber left, the invitation offers any barber.
+With `COMEBACK_ENABLED=1`, once a day (12:00–20:00 Kyiv, inside the 10-minute cron) the bot invites
+clients who are due again: **each client's own rhythm**, the median gap between their recent visits
+(14–60 days; 30 for a single known visit). Message: "Минулого разу ви були у майстра Ігор Халай
+15 жовтня" with **🔁 Повторити: Ігор · Чоловіча стрижка** (opens the calendar for the same barber and
+service), **👥 Інший майстер або послуга**, **🔕 Не нагадувати**. Only within 14 days after the due
+day (so switching it on does not message everyone who has been gone for months), not with an
+upcoming booking, once per visit, at most once per chat in 3 weeks; `/stop_reminders` stops it too.
+If the barber left, the invitation offers any barber.
+
+### 🔁 Як минулого разу
+A menu button: the client's latest visit (remembered from bookings and the daily pass, else found
+in the last 3 months of Altegio by phone) → same barber and service → calendar.
+
+### AI haircut → booking
+Each of the 6 AI haircut photos has **✂️ Записатися на цю стрижку**: a normal booking whose summary
+and Altegio comment carry the haircut, and the photo goes to the barber (if linked) and the shop chat.
 
 The day picker asks Altegio's `/book_dates` once per calendar month in the window: that endpoint
 answers a single month (the widget's calendar), so asking once showed only the current month.
@@ -187,9 +198,9 @@ ALTEGIO_LOCATION_IDS=297851        # comma-separated, shown in this order
 # REMINDER_INTERVAL=600
 # ALTEGIO_MOCK=1                   # no tokens: run against fixtures/altegio.json
 # VOICE_BOOKING=0                  # turn voice booking off
-# BOOKING_DAYS_AHEAD=30            # how far ahead the day picker goes (Altegio's online-booking horizon still applies)
+# BOOKING_DAYS_AHEAD=60            # how far ahead the calendar goes (Altegio's online-booking horizon still applies)
 # COMEBACK_ENABLED=1               # "time for a haircut" invitations a month after the last visit (off by default)
-# COMEBACK_DAYS=30
+# COMEBACK_DAYS=30                 # invitation interval for clients with a single known visit
 # CHAT_MENU_BUTTON=booking         # button left of the message field: booking (default) | arcade | none
 # BOOKING_WIDGET_URL=https://n308628.alteg.io/company/297851/personal/menu?o=
 # CHAT_MENU_BOOKING_TEXT=Записатись

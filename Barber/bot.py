@@ -176,7 +176,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         await update.message.reply_text("\n".join(summary_lines))
 
-        # Send each hairstyle as a photo with caption
+        # Send each hairstyle as a photo; with booking on, each one gets "book this haircut"
+        bookable = context.application.bot_data.get("altegio") is not None
+        styles = []
         for i, style in enumerate(generated, 1):
             caption = (
                 f"Варіант {i}: {style['name']}\n\n"
@@ -186,14 +188,19 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             if len(caption) > 1024:
                 caption = caption[:1021] + "..."
 
-            await context.bot.send_photo(
+            sent = await context.bot.send_photo(
                 chat_id=update.effective_chat.id,
                 photo=io.BytesIO(style["image_bytes"]),
                 caption=caption,
+                reply_markup=booking.style_button(i - 1) if bookable else None,
             )
+            photo = getattr(sent, "photo", None)
+            styles.append({"name": style["name"], "file_id": photo[-1].file_id if photo else None})
+        context.user_data["styles"] = styles  # booking.start_with_style reads the picked one
 
         await processing_msg.delete()
         await update.message.reply_text(
+            texts.STYLE_DONE if bookable else
             "Готово! Покажіть варіанти майстру й оберіть улюблений ✂️\n"
             "Записатися — кнопка «📅 Записатися» нижче.",
             reply_markup=MAIN_MENU_KEYBOARD,

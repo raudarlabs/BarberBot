@@ -2,7 +2,8 @@
 import os
 import sys
 import unittest
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from unittest import mock
 from zoneinfo import ZoneInfo
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -60,12 +61,20 @@ class _FlowBase(unittest.IsolatedAsyncioTestCase):
         await self.press(booking.on_location, "bk:loc:%d" % LOC)
         await self.press(booking.on_staff, "bk:stf:%d" % IGOR)
         state, q = await self.press(booking.on_service, "bk:svc:%d" % HAIRCUT)
+        q = await self.to_month(q, self.day)
         days = [b[1] for b in buttons(q.edits[-1][1]) if b[1].startswith("bk:day:")]
         self.assertNotIn("bk:day:" + self.day.isoformat(), days)
         self.assertIn("bk:day:" + (self.day + timedelta(days=1)).isoformat(), days)
         paths = [r[1] for r in self.backend.requests]
         self.assertTrue(any(p.startswith("/book_dates/") for p in paths))
         self.assertFalse(any(p.startswith("/timetable/dates/") for p in paths))
+
+    async def to_month(self, q, day):
+        """The calendar opens on the first month with free days; press ▶ until `day`'s month shows."""
+        for _ in range(3):
+            if any(b[1] == "bk:cal:" + day.strftime("%Y-%m") and b[0] == "▶" for b in buttons(q.edits[-1][1])):
+                _, q = await self.press(booking.on_cal, "bk:cal:" + day.strftime("%Y-%m"))
+        return q
 
     async def walk_to_time(self):
         state = await booking.start_booking(FakeUpdate(self.chat, USER, message=FakeMessage(self.chat)), self.ctx)
@@ -84,8 +93,8 @@ class _FlowBase(unittest.IsolatedAsyncioTestCase):
 
         state, q = await self.press(booking.on_service, "bk:svc:%d" % HAIRCUT)
         self.assertEqual(state, booking.DAY)
-        self.assertIn(("Пн %02d.%02d" % (self.day.day, self.day.month), "bk:day:" + self.day.isoformat()),
-                      buttons(q.edits[-1][1]))
+        q = await self.to_month(q, self.day)
+        self.assertIn((str(self.day.day), "bk:day:" + self.day.isoformat()), buttons(q.edits[-1][1]))
 
         state, q = await self.press(booking.on_day, "bk:day:" + self.day.isoformat())
         self.assertEqual(state, booking.TIME)
@@ -370,3 +379,68 @@ class ReviewFixBookingTests(_FlowBase):
         state = await booking.start_with_staff(FakeUpdate(self.chat, USER, query=q), self.ctx)
         self.assertEqual(state, booking.SERVICE)
         self.assertIn("Ігор Халай", q.edits[-1][0])
+
+
+class CalendarTests(_FlowBase):
+    def grid(self, q):
+        return buttons(q.edits[-1][1])
+
+    async def open_calendar(self):
+        await booking.start_booking(FakeUpdate(self.chat, USER, message=FakeMessage(self.chat)), self.ctx)
+        await self.press(booking.on_location, "bk:loc:%d" % LOC)
+        await self.press(booking.on_staff, "bk:stf:%d" % IGOR)
+        return await self.press(booking.on_service, "bk:svc:%d" % HAIRCUT)
+
+    async def test_month_grid_and_arrows(self):
+        state, q = await self.open_calendar()
+        self.assertEqual(state, booking.DAY)
+        g = self.grid(q)
+        today = datetime.now(TZ).date()
+        self.assertEqual(g[0], (" ", "bk:nop"))  # no ◀ before this month
+        self.assertEqual(g[1][0], "%s %d" % (T.MONTHS[today.month - 1], today.year))
+        self.assertEqual(g[2][0], "▶")
+        self.assertEqual([b[0] for b in g[3:10]], T.WEEKDAYS_SHORT)
+        free = [b for b in g if b[1].startswith("bk:day:")]
+        self.assertTrue(free and all(b[0] == str(int(b[1][-2:])) for b in free))
+        self.assertTrue(all(date.fromisoformat(b[1][7:]) >= today for b in free))
+        self.assertLessEqual(len(g), 100)  # Telegram's limit for one keyboard
+
+        nxt = g[2][1]
+        state, q = await self.press(booking.on_cal, nxt)
+        self.assertEqual(state, booking.DAY)
+        self.assertEqual(self.grid(q)[0][0], "◀")
+        state, q = await self.press(booking.on_nop, "bk:nop")
+        self.assertIsNone(state)  # tapping a dot does nothing
+
+    async def test_horizon_hides_far_months(self):
+        with mock.patch.object(booking, "DAYS_AHEAD", 3):
+            state, q = await self.open_calendar()
+        g = self.grid(q)
+        last = datetime.now(TZ).date() + timedelta(days=2)
+        if last.month == datetime.now(TZ).date().month:
+            self.assertEqual(g[2], (" ", "bk:nop"))  # no ▶ past the horizon
+        self.assertTrue(all(date.fromisoformat(b[1][7:]) <= last for b in g if b[1].startswith("bk:day:")))
+
+    async def test_full_month_jumps_ahead_and_back_keeps_month(self):
+        today = datetime.now(TZ).date()
+        nxt = date(today.year + (today.month == 12), today.month % 12 + 1, 1)
+        with mock.patch.object(booking, "_free_days", side_effect=lambda c, bk, m, t, l: _fake_days(m, nxt)):
+            state, q = await self.open_calendar()
+            self.assertIn(T.MONTHS[nxt.month - 1], self.grid(q)[1][0])  # opened on next month
+            await self.press(booking.on_day, "bk:day:" + nxt.replace(day=10).isoformat())
+            state, q = await self.press(booking.on_back, "bk:back:day")
+            self.assertIn(T.MONTHS[nxt.month - 1], self.grid(q)[1][0])  # same month again
+
+    async def test_explicit_empty_month_shows_grid(self):
+        today = datetime.now(TZ).date()
+        nxt = date(today.year + (today.month == 12), today.month % 12 + 1, 1)
+        await self.open_calendar()
+
+        with mock.patch.object(booking, "_free_days", return_value=[]):
+            state, q = await self.press(booking.on_cal, "bk:cal:" + nxt.strftime("%Y-%m"))
+        self.assertEqual(state, booking.DAY)
+        self.assertTrue(q.edits[-1][0].startswith("У місяці"))
+
+
+def _fake_days(month, only):  # side effect of an AsyncMock: a plain function's result is awaited for us
+    return [month.replace(day=10)] if month == only else []

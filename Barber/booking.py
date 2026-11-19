@@ -18,6 +18,7 @@ Needs in application.bot_data:
 """
 from __future__ import annotations
 
+import calendar
 import logging
 import os
 import time
@@ -53,7 +54,8 @@ logger = logging.getLogger(__name__)
 
 LOC, STAFF, SERVICE, DAY, TIME, PHONE, CONFIRM, ANY = range(8)
 ANY_OPTIONS = 6  # "any barber": how many earliest options to offer
-DAYS_AHEAD = int(os.getenv("BOOKING_DAYS_AHEAD", "30"))  # Altegio's online-booking horizon still applies
+DAYS_AHEAD = int(os.getenv("BOOKING_DAYS_AHEAD", "60"))  # calendar horizon; Altegio's online-booking rules still apply
+ANY_DAYS = 21  # "nearest time, any barber" looks this far: one Altegio request per barber per month
 MAX_TIMES = 88  # 22 rows of 4 + nav row stays under Telegram's 100-button limit
 
 
@@ -203,7 +205,7 @@ async def on_any_service(update, context):
     options = []
     try:
         for sid, svc in group["by_staff"].items():
-            days = await client.booking_dates(bk["loc"], sid, [svc.id], now.date(), DAYS_AHEAD)
+            days = await client.booking_dates(bk["loc"], sid, [svc.id], now.date(), ANY_DAYS)
             for day in days[:2]:  # today's slots may all be gone already
                 starts = await client.booking_times(bk["loc"], sid, day, [svc.id])
                 if starts:
@@ -269,24 +271,97 @@ async def show_services(update, context):
     return SERVICE
 
 
-async def show_days(update, context):
+def _month_start(d: date) -> date:
+    return date(d.year, d.month, 1)
+
+
+def _next_month(m: date, step: int = 1) -> date:
+    y, mo = divmod(m.year * 12 + m.month - 1 + step, 12)
+    return date(y, mo + 1, 1)
+
+
+async def _free_days(client, bk, month: date, today: date, last: date):
+    """Bookable days of one calendar month, clipped to [today, last]."""
+    lo, hi = max(today, month), min(last, _next_month(month) - timedelta(days=1))
+    if lo > hi:
+        return []
+    days = await client.booking_dates(bk["loc"], bk["staff_id"], _service_ids(bk), lo, (hi - lo).days + 1)
+    appt = bk.get("appt") if bk.get("reschedule") else None
+    if appt is not None and lo <= appt.start.date() <= hi and appt.start.date() not in days:
+        days = sorted(days + [appt.start.date()])  # moving within the visit's own day is allowed
+    return days
+
+
+def calendar_markup(month: date, days, today: date, last: date, back) -> InlineKeyboardMarkup:
+    """Month grid: free days are numbers (bk:day:YYYY-MM-DD), the rest dots; ◀ ▶ switch months."""
+    free = set(days)
+    nop = lambda text: InlineKeyboardButton(text, callback_data="bk:nop")  # noqa: E731
+    prev_m, next_m = _next_month(month, -1), _next_month(month)
+    head = [
+        InlineKeyboardButton("◀", callback_data="bk:cal:" + prev_m.strftime("%Y-%m"))
+        if month > _month_start(today) else nop(" "),
+        nop("%s %d" % (T.MONTHS[month.month - 1], month.year)),
+        InlineKeyboardButton("▶", callback_data="bk:cal:" + next_m.strftime("%Y-%m"))
+        if next_m <= last else nop(" "),
+    ]
+    rows = [head, [nop(w) for w in T.WEEKDAYS_SHORT]]
+    for week in calendar.monthcalendar(month.year, month.month):
+        row = []
+        for n in week:
+            d = date(month.year, month.month, n) if n else None
+            if d is None:
+                row.append(nop(" "))
+            elif d in free:
+                row.append(InlineKeyboardButton(str(n), callback_data="bk:day:" + d.isoformat()))
+            else:
+                row.append(nop("·"))
+        rows.append(row)
+    return InlineKeyboardMarkup(rows + [_nav(back)])
+
+
+async def show_days(update, context, month: date = None, keep: bool = False):
+    """The calendar. Opens on this month, or the first month with free days; `keep` reopens the
+    month the client was looking at (coming back from the times)."""
     client, _, _ = _deps(context)
     bk = _bk(context)
     today = datetime.now(client.tz).date()
+    last = today + timedelta(days=DAYS_AHEAD - 1)
+    back = None if bk.get("reschedule") else "svc"
+    explicit = month is not None or (keep and bk.get("cal"))
+    if month is None:
+        month = date.fromisoformat(bk["cal"]) if keep and bk.get("cal") else _month_start(today)
     try:
-        days = await client.booking_dates(bk["loc"], bk["staff_id"], _service_ids(bk), today, DAYS_AHEAD)
-        appt = bk.get("appt") if bk.get("reschedule") else None
-        if appt is not None and appt.start.date() >= today and appt.start.date() not in days:
-            days = sorted(days + [appt.start.date()])  # moving within the visit's own day is allowed
+        days = await _free_days(client, bk, month, today, last)
+        while not days and not explicit and _next_month(month) <= last:  # nothing this month: look ahead
+            month = _next_month(month)
+            days = await _free_days(client, bk, month, today, last)
     except AltegioError as e:
         return await _api_failed(update, context, e)
-    back = None if bk.get("reschedule") else "svc"
-    if not days:
+    if not days and not explicit:
         await _show(update, T.NO_DAYS, InlineKeyboardMarkup([_nav(None if bk.get("reschedule") else "stf")]))
         return DAY
-    buttons = [InlineKeyboardButton(T.day_button(d), callback_data="bk:day:" + d.isoformat()) for d in days]
-    await _show(update, T.PICK_DAY, InlineKeyboardMarkup(_rows(buttons, 3) + [_nav(back)]))
+    bk["cal"] = month.isoformat()
+    text = T.PICK_DAY if days else T.NO_DAYS_MONTH.format(month=T.MONTHS[month.month - 1].lower())
+    await _show(update, text, calendar_markup(month, days, today, last, back))
     return DAY
+
+
+async def on_cal(update, context):
+    """◀ / ▶ in the calendar."""
+    bk = _bk(context)
+    if "staff_id" not in bk:
+        return await _expired(update, context)
+    try:
+        month = date.fromisoformat(update.callback_query.data.split(":")[2] + "-01")
+    except ValueError:
+        return await _expired(update, context)
+    return await show_days(update, context, month=month)
+
+
+async def on_nop(update, context):
+    """A calendar cell that is not a free day (or a header): nothing to do."""
+    await update.callback_query.answer()
+    return None
 
 
 async def show_times(update, context, prefix=None, window=None, starts=None):
@@ -360,6 +435,8 @@ async def show_summary(update, context):
             location=locations.get(bk["loc"], ""), staff=bk["staff_name"], service=svc.title,
             price=" · " + svc.price_label if svc.price_label else "", when=T.when(start), phone=bk["phone"],
         )
+        if bk.get("style"):
+            text += "\n" + T.STYLE_SUMMARY.format(name=bk["style"]["name"])
         rows = [[InlineKeyboardButton(T.CONFIRM_BUTTON, callback_data="bk:ok")],
                 [InlineKeyboardButton(T.OTHER_PHONE_BUTTON, callback_data="bk:phone")], _nav("day")]
     if client.is_mock:
@@ -416,6 +493,94 @@ async def start_with_staff(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await show_services(update, context)
 
 
+def style_button(index: int) -> InlineKeyboardMarkup:
+    """Under each AI haircut photo: book exactly this one."""
+    return InlineKeyboardMarkup([[InlineKeyboardButton(T.STYLE_BOOK, callback_data="bk:st:%d" % index)]])
+
+
+async def start_with_style(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """bk:st:{i} under an AI haircut photo: a normal booking that carries that haircut along."""
+    client, _, locations = _deps(context)
+    q = update.callback_query
+    styles = context.user_data.get("styles") or []
+    try:
+        style = styles[int(q.data.split(":")[2])]
+    except (IndexError, ValueError):
+        await q.answer(T.SESSION_EXPIRED, show_alert=True)
+        return None
+    if client is None or not locations:
+        await q.answer(T.UNAVAILABLE, show_alert=True)
+        return None
+    await q.answer()
+    context.user_data["bk"] = {"style": {"name": style.get("name", ""), "file_id": style.get("file_id")}}
+    await update.effective_chat.send_message(T.STYLE_PICKED.format(name=style.get("name", "")))
+    return await show_locations(_NoCallback(update), context)
+
+
+async def start_repeat_last(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """"🔁 Як минулого разу" (menu) or bk:last: the client's latest visit -> same barber + service."""
+    client, links, locations = _deps(context)
+    if update.callback_query is not None:
+        await update.callback_query.answer()
+    chat = update.effective_chat
+    if client is None or not locations:
+        await chat.send_message(T.UNAVAILABLE)
+        return ConversationHandler.END
+    last = await links.last_for(chat.id)
+    if last is None or last[0] not in locations:
+        phone = await links.phone_for_chat(chat.id)
+        if not phone:
+            context.user_data["after_contact"] = "repeat"
+            kb = ReplyKeyboardMarkup([[KeyboardButton(T.SHARE_PHONE_BUTTON, request_contact=True)]],
+                                     resize_keyboard=True, one_time_keyboard=True)
+            await chat.send_message(T.REPEAT_ASK_PHONE, reply_markup=kb)
+            return ConversationHandler.END
+        await chat.send_action(ChatAction.TYPING)  # a few seconds of Altegio history
+        try:
+            last = await find_last_visit(client, links, locations, chat.id, phone)
+        except AltegioError as e:
+            return await _api_failed(update, context, e)
+        if last is None:
+            await chat.send_message(T.REPEAT_NONE, reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton(T.VISITS_BOOK, callback_data="bk:new")]]))
+            return ConversationHandler.END
+    try:
+        past = await client.get_appointment(*last)
+    except AltegioError as e:
+        if e.status == 404:  # deleted in Altegio: look again next time
+            await links._pipe(["GETDEL", "bb:last:%d" % chat.id])
+        return await _api_failed(update, context, e)
+    return await _repeat(update, context, last[0], past)
+
+
+REPEAT_HISTORY_DAYS = 90
+
+
+async def find_last_visit(client, links, locations, chat_id: int, phone: str):
+    """The client's latest visit (a past one that happened, else an upcoming booking) by phone or the
+    Altegio client id; remembered for next time. (location_id, appointment_id) or None."""
+    now = datetime.now(client.tz)
+    best = None
+    for loc in locations:
+        cid = await links.client_id_for(loc, phone)
+        appts = await client.list_appointments(loc, now - timedelta(days=REPEAT_HISTORY_DAYS), now + timedelta(days=60))
+        for a in appts:
+            mine = (a.client_phone and a.client_phone == phone) or (cid and a.client_id == cid)
+            happened = a.start <= now and a.status in ("arrived", "confirmed")
+            upcoming = a.start > now and a.active
+            if not mine or not (happened or upcoming):
+                continue
+            rank = (happened, a.start if happened else -a.start.timestamp())  # newest past, else soonest upcoming
+            if best is None or rank > best[0]:
+                best = (rank, loc, a)
+    if best is None:
+        return None
+    _, loc, a = best
+    await links.remember_last(chat_id, loc, a.id)
+    await links.remember_appointment(loc, a.id, chat_id)
+    return loc, a.id
+
+
 async def start_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """cb:rp:{loc}:{past appointment} from the "time for a haircut" invitation (comeback.py):
     same barber and same service as that visit, straight to the day picker."""
@@ -435,7 +600,6 @@ async def start_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return None
     try:
         past = await client.get_appointment(loc, appt_id)
-        names = {s.id: s.name for s in await client.list_staff(loc)}
     except AltegioError as e:
         return await _api_failed(update, context, e)
     await q.answer()
@@ -443,6 +607,17 @@ async def start_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_reply_markup(None)  # keep the invitation text, drop its buttons
     except Exception:
         pass
+    return await _repeat(update, context, loc, past)
+
+
+async def _repeat(update, context, loc: int, past):
+    """Book again like `past`: same barber and service, straight to the calendar. Barber gone ->
+    the barber list; service no longer offered -> that barber's services."""
+    client, _, _ = _deps(context)
+    try:
+        names = {s.id: s.name for s in await client.list_staff(loc)}
+    except AltegioError as e:
+        return await _api_failed(update, context, e)
     here = _NoCallback(update)
     if past.staff_id not in names:  # the barber left or is hidden: pick another one
         context.user_data["bk"] = {"loc": loc}
@@ -460,6 +635,7 @@ async def start_repeat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if svc is None:  # that service is no longer offered: choose one
         return await show_services(here, context)
     bk.update(service_id=svc.id, duration=svc.duration)
+    await update.effective_chat.send_message(T.REPEAT_PICKED.format(staff=names[past.staff_id], service=svc.title))
     return await show_days(here, context)
 
 
@@ -662,7 +838,7 @@ async def on_confirm(update, context):
             try:
                 appt = await client.create_appointment(
                     bk["loc"], bk["staff_id"], [svc], start, bk["phone"], name,
-                    comment="Запис через Telegram-бот", api_id=api_id,
+                    comment=_comment(bk), api_id=api_id,
                 )
             except AltegioError as e:
                 # A retry after a timeout, or after the first attempt already went through,
@@ -682,6 +858,8 @@ async def on_confirm(update, context):
         await links.remember_appointment(bk["loc"], appt.id, chat_id)
         if appt.client_id and bk.get("phone"):
             await links.remember_client_id(bk["loc"], bk["phone"], appt.client_id)
+        if not bk.get("reschedule"):
+            await links.remember_last(chat_id, bk["loc"], appt.id)  # "🔁 Як минулого разу"
         # A reminder for a window we are already inside would just repeat this message.
         hours = (start - datetime.now(client.tz)).total_seconds() / 3600
         stamp = int(start.timestamp())
@@ -721,9 +899,44 @@ async def on_confirm(update, context):
             await admin_notify.notify_admins(context, note + (T.MOCK_NOTE if client.is_mock else ""))
     except Exception:
         logger.exception("booking %s: admin notification failed", appt.id)
+    if bk.get("style") and not bk.get("reschedule"):
+        try:
+            await _send_style(context, bk, start, bk.get("name") or admin_notify.user_name(update.effective_user))
+        except Exception:
+            logger.exception("booking %s: haircut photo for the barber failed", appt.id)
     if client.is_mock:
         text += T.MOCK_NOTE
     return await _finish(update, context, text)
+
+
+def _comment(bk) -> str:
+    comment = "Запис через Telegram-бот"
+    if bk.get("style"):
+        comment += "; стрижка з ШІ-підбору: «%s»" % bk["style"]["name"]
+    return comment
+
+
+async def _send_style(context, bk, start, client_name) -> int:
+    """The haircut the client picked from the AI photos, to the barber (if linked) and the shop chat."""
+    bot, style = getattr(context, "bot", None), bk["style"]
+    if bot is None or not style.get("file_id"):
+        return 0
+    try:
+        member = (await team.members()).get(int(bk["staff_id"])) or {}
+    except Exception:  # team store down: the shop chat still gets the photo
+        logger.exception("haircut photo: team lookup failed")
+        member = {}
+    chats = list(dict.fromkeys([c for c in [member.get("chat")] if c] + admin_notify.notify_chat_ids()))
+    caption = T.STYLE_FOR_BARBER.format(name=style["name"], client=client_name, staff=bk.get("staff_name", ""),
+                                        when=T.when(start))
+    sent = 0
+    for chat in chats:
+        try:
+            await bot.send_photo(chat_id=int(chat), photo=style["file_id"], caption=caption[:1024])
+            sent += 1
+        except Exception as e:
+            logger.warning("haircut photo to %s failed: %s", chat, e)
+    return sent
 
 
 async def _find_own(client, bk, start):
@@ -886,7 +1099,7 @@ async def on_back(update, context):
         return await show_staff(update, context)
     if target == "svc":
         return await show_services(update, context)
-    return await show_days(update, context)
+    return await show_days(update, context, keep=True)  # back from the times: same month
 
 
 def _left_text(context) -> str:
@@ -946,6 +1159,9 @@ def build_handler(persistent: bool = False) -> ConversationHandler:
             CallbackQueryHandler(start_booking, pattern=r"^bk:new$"),
             CallbackQueryHandler(start_with_staff, pattern=r"^bk:go:\d+:\d+$"),
             CallbackQueryHandler(start_repeat, pattern=r"^cb:rp:\d+:\d+$"),
+            CallbackQueryHandler(start_with_style, pattern=r"^bk:st:\d+$"),
+            CallbackQueryHandler(start_repeat_last, pattern=r"^bk:last$"),
+            MessageHandler(filters.Regex("^%s$" % T.MENU_REPEAT), start_repeat_last),
             CallbackQueryHandler(start_on_day, pattern=r"^bk:wd:\d+:\d+:\d+:\d{8}$"),
             voice,
         ],
@@ -956,7 +1172,9 @@ def build_handler(persistent: bool = False) -> ConversationHandler:
             ANY: [CallbackQueryHandler(on_any_service, pattern=r"^bk:asv:\d+$"),
                   CallbackQueryHandler(on_any_go, pattern=r"^bk:ago:\d+:\d+:\d{12}$")] + nav,
             SERVICE: [CallbackQueryHandler(on_service, pattern=r"^bk:svc:\d+$")] + nav,
-            DAY: [CallbackQueryHandler(on_day, pattern=r"^bk:day:[\d-]+$")] + nav,
+            DAY: [CallbackQueryHandler(on_day, pattern=r"^bk:day:[\d-]+$"),
+                  CallbackQueryHandler(on_cal, pattern=r"^bk:cal:\d{4}-\d{2}$"),
+                  CallbackQueryHandler(on_nop, pattern=r"^bk:nop$")] + nav,
             TIME: [CallbackQueryHandler(on_time, pattern=r"^bk:t:\d{4}$"),
                    CallbackQueryHandler(on_waitlist, pattern=r"^bk:wl$")] + nav,
             PHONE: [

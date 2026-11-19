@@ -1,18 +1,21 @@
 """
-"Time for a haircut?": a month after a client's last visit the bot invites them back, with one
-button that books the same barber and the same service again — only the day and time are left
-to pick.
+"Time for a haircut?": when a client is due again, the bot invites them back, with one button that
+books the same barber and the same service — only the day and time are left to pick.
 
 - Runs inside the 10-minute cron (api/cron_reminders.py), once a day between SEND_HOURS in the
   shop's time (a per-day mark), and only with COMEBACK_ENABLED=1.
-- Candidates: visits COMEBACK_DAYS ago (with CATCH_UP_DAYS of slack, so a missed day is caught up)
-  that happened ("arrived", or "confirmed" that nobody marked), whose client's Telegram is linked
-  (reminders.find_chat) and who did not /stop_reminders or press "🔕 Не нагадувати".
-- Skipped when the client has any later visit: already back, or already booked for the next
-  LOOKAHEAD_DAYS. At most one invitation per chat per COOLDOWN, once per visit.
+- Who: chats that wrote to the bot (bb:chats) and shared their phone. Their visits of the last
+  HISTORY_DAYS are matched by phone in one Altegio pass per location.
+- When: each client's own rhythm — the median gap between their recent visits (personal_interval),
+  between MIN_INTERVAL and MAX_INTERVAL days; COMEBACK_DAYS (30) for a single known visit. Invited
+  from that day for GRACE_DAYS, so clients gone for long are not all messaged at once when this is
+  switched on.
+- Not when: an upcoming booking, /stop_reminders, "🔕 Не нагадувати", already invited for this
+  visit, or invited in the last COOLDOWN.
+- Every pass also stores each linked client's latest visit (bb:last) for "🔁 Як минулого разу".
 - The barber left / is hidden: the invitation offers any barber instead of the repeat button.
 
-Buttons: cb:rp:{loc}:{appointment} -> booking.start_repeat (same barber + service -> day picker),
+Buttons: cb:rp:{loc}:{appointment} -> booking.start_repeat (same barber + service -> calendar),
 bk:new -> the normal booking, cb:off -> no more invitations to this chat.
 """
 from __future__ import annotations
@@ -28,17 +31,18 @@ from telegram.ext import CallbackQueryHandler, ContextTypes
 
 import texts as T
 from altegio import AltegioError, Appointment
-from reminders import find_chat
 
 logger = logging.getLogger(__name__)
 
-COMEBACK_DAYS = int(os.getenv("COMEBACK_DAYS", "30"))
-CATCH_UP_DAYS = 3
-LOOKAHEAD_DAYS = 60
+COMEBACK_DAYS = int(os.getenv("COMEBACK_DAYS", "30"))  # interval for a client with one known visit
+MIN_INTERVAL, MAX_INTERVAL = 14, 60
+GRACE_DAYS = 14         # invite on days [interval, interval + GRACE_DAYS] after the last visit
+HISTORY_DAYS = 120      # visit history read per pass
+LOOKAHEAD_DAYS = 60     # an upcoming booking in this window means: no invitation
 COOLDOWN = 21 * 86400
-SEND_HOURS = (12, 20)  # [from, to) in the shop's time
+SEND_HOURS = (12, 20)   # [from, to) in the shop's time
 SENT_KIND = "comeback"
-CAME_BACK = ("waiting", "confirmed", "arrived")  # a later visit with one of these: no invitation
+HAPPENED = ("arrived", "confirmed")  # a past visit that took place ("confirmed" = nobody marked it)
 
 
 def enabled() -> bool:
@@ -52,14 +56,15 @@ def _first(name: str) -> str:
 def message(appt: Appointment, staff_name: str, staff_active: bool):
     loc = appt.location_id
     service = appt.service_titles if len(appt.services) == 1 else ""
+    when = "%d %s" % (appt.start.day, T.MONTHS_GEN[appt.start.month - 1])
     if staff_active and staff_name:
-        text = T.COMEBACK.format(staff=staff_name)
+        text = T.COMEBACK.format(staff=staff_name, date=when)
         label = T.COMEBACK_REPEAT_SERVICE.format(name=_first(staff_name), service=service) if service \
             else T.COMEBACK_REPEAT.format(name=_first(staff_name))
         rows = [[InlineKeyboardButton(label, callback_data="cb:rp:%d:%d" % (loc, appt.id))],
                 [InlineKeyboardButton(T.COMEBACK_OTHER, callback_data="bk:new")]]
     else:
-        text = T.COMEBACK_NO_STAFF
+        text = T.COMEBACK_NO_STAFF.format(date=when)
         rows = [[InlineKeyboardButton(T.VISITS_BOOK, callback_data="bk:new")]]
     rows.append([InlineKeyboardButton(T.COMEBACK_OFF, callback_data="cb:off")])
     return text, InlineKeyboardMarkup(rows)
@@ -73,6 +78,32 @@ async def _cooling(links, chat_id: int) -> bool:
     return bool((await links._pipe(["GET", "bb:cbchat:%d" % chat_id]))[0])
 
 
+def personal_interval(starts) -> int:
+    """Days between a client's visits: the median of the last (up to 4) gaps, clamped to
+    [MIN_INTERVAL, MAX_INTERVAL]; COMEBACK_DAYS when there is only one visit."""
+    days = sorted({s.date() for s in starts})
+    gaps = [(b - a).days for a, b in zip(days, days[1:])][-4:]
+    if not gaps:
+        return COMEBACK_DAYS
+    gaps.sort()
+    mid = len(gaps) // 2
+    median = gaps[mid] if len(gaps) % 2 else (gaps[mid - 1] + gaps[mid]) / 2
+    return int(min(MAX_INTERVAL, max(MIN_INTERVAL, round(median))))
+
+
+async def linked_phones(links) -> Dict[str, int]:
+    """{phone: chat} for every chat in bb:chats that shared its phone — barbers (bb:team_chat) excluded."""
+    raw, team = await links._pipe(["HGETALL", "bb:chats"], ["HGETALL", "bb:team_chat"])
+    staff_chats = {str(team[i]) for i in range(0, len(team or []), 2)}
+    raw = raw or []
+    chats = [int(raw[i]) for i in range(0, len(raw), 2)
+             if str(raw[i]).lstrip("-").isdigit() and str(raw[i]) not in staff_chats]
+    if not chats:
+        return {}
+    phones = await links._pipe(*[["GET", "bb:chat:%d" % c] for c in chats])
+    return {p: c for c, p in zip(chats, phones) if p}
+
+
 async def run(client, links, locations: Dict[int, str], bot, now: Optional[datetime] = None,
               force: bool = False) -> int:
     """One daily pass. Returns how many invitations were sent. `force` skips the switch,
@@ -84,53 +115,47 @@ async def run(client, links, locations: Dict[int, str], bot, now: Optional[datet
         mark = (await links._pipe(["SET", "bb:cbday:%s" % now.date().isoformat(), "1", "EX", 2 * 86400, "NX"]))[0]
         if mark is None:
             return 0  # already ran today
-    first_day = now.date() - timedelta(days=COMEBACK_DAYS + CATCH_UP_DAYS - 1)
-    last_day = now.date() - timedelta(days=COMEBACK_DAYS)
-    lo = datetime(first_day.year, first_day.month, first_day.day, tzinfo=client.tz)
-    hi = datetime(last_day.year, last_day.month, last_day.day, tzinfo=client.tz) + timedelta(days=1)
-    sent, chats_done = 0, set()
+    phones = await linked_phones(links)
+    if not phones:
+        return 0
+    sent, done = 0, set()
     for loc in locations:
         try:
-            past = await client.list_appointments(loc, lo, hi)
+            appts = await client.list_appointments(loc, now - timedelta(days=HISTORY_DAYS),
+                                                   now + timedelta(days=LOOKAHEAD_DAYS))
         except AltegioError as e:
             logger.warning("comeback: cannot list visits for %s: %s", loc, e)
             continue
-        candidates = []
-        for a in sorted(past, key=lambda x: x.start, reverse=True):  # newest visit per client first
-            if a.status not in ("arrived", "confirmed") or not (lo <= a.start < hi):
+        by_phone: Dict[str, list] = {}
+        for a in appts:
+            if a.client_phone in phones:
+                by_phone.setdefault(a.client_phone, []).append(a)
+        staff = None
+        for phone, items in by_phone.items():
+            chat = phones[phone]
+            past = sorted((a for a in items if a.start <= now and a.status in HAPPENED), key=lambda a: a.start)
+            if not past or chat in done:
                 continue
-            if await links.was_sent(a.id, SENT_KIND):
+            done.add(chat)
+            last = past[-1]
+            await links.remember_last(chat, loc, last.id)  # "🔁 Як минулого разу"
+            await links.remember_appointment(loc, last.id, chat)  # its buttons work in this chat
+            if any(a.start > now and a.active for a in items):
+                continue  # already booked
+            interval = personal_interval([a.start for a in past])
+            since = (now.date() - last.start.date()).days
+            if not (interval <= since <= interval + GRACE_DAYS):
                 continue
-            try:
-                chat = await find_chat(a, client, links)
-            except AltegioError as e:
-                logger.warning("comeback: client lookup failed for %s: %s", a.id, e)
+            if await links.was_sent(last.id, SENT_KIND) or await links.opted_out(chat) \
+                    or await _off(links, chat) or await _cooling(links, chat):
                 continue
-            if not chat or chat in chats_done:
-                continue
-            chats_done.add(chat)
-            if await links.opted_out(chat) or await _off(links, chat) or await _cooling(links, chat):
-                continue
-            candidates.append((a, chat))
-        if not candidates:
-            continue
-        try:
-            later = await client.list_appointments(loc, min(a.start for a, _ in candidates),
-                                                   now + timedelta(days=LOOKAHEAD_DAYS))
-            staff = {s.id: s.name for s in await client.list_staff(loc)}
-        except AltegioError as e:
-            logger.warning("comeback: cannot check later visits for %s: %s", loc, e)
-            continue
-        for a, chat in candidates:
-            phone = a.client_phone or await links.phone_for_chat(chat) or ""
-            again = any(b.id != a.id and b.start > a.start and b.status in CAME_BACK and (
-                (a.client_id and b.client_id == a.client_id) or (phone and b.client_phone == phone))
-                for b in later)
-            if again:
-                await links.mark_sent(a.id, SENT_KIND)  # came back already: never ask about this visit
-                continue
-            name = a.staff_name or staff.get(a.staff_id, "")
-            text, markup = message(a, name, a.staff_id in staff)
+            if staff is None:
+                try:
+                    staff = {s.id: s.name for s in await client.list_staff(loc)}
+                except AltegioError:
+                    staff = {}
+            name = last.staff_name or staff.get(last.staff_id, "")
+            text, markup = message(last, name, last.staff_id in staff)
             try:
                 await bot.send_message(chat_id=chat, text=text, reply_markup=markup)
                 sent += 1
@@ -139,8 +164,7 @@ async def run(client, links, locations: Dict[int, str], bot, now: Optional[datet
             except TelegramError as e:
                 logger.warning("comeback: send to %s failed, will retry: %s", chat, e)
                 continue
-            await links.mark_sent(a.id, SENT_KIND)
-            await links.remember_appointment(loc, a.id, chat)  # the repeat button checks this
+            await links.mark_sent(last.id, SENT_KIND)
             await links._pipe(["SET", "bb:cbchat:%d" % chat, "1", "EX", COOLDOWN])
     return sent
 
