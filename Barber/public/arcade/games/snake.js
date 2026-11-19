@@ -113,16 +113,15 @@ class SnakeGame {
   step() {
     if (this.queue.length) this.dir = this.queue.shift();
     const head = this.snake[0];
-    const next = { x: head.x + this.dir.x, y: head.y + this.dir.y };
+    // No walls (like Snake II on the Nokia 3310): leaving one edge comes back in at the opposite one.
+    const next = { x: (head.x + this.dir.x + COLS) % COLS, y: (head.y + this.dir.y + this.rows) % this.rows };
     const eatsFood = this.food && next.x === this.food.x && next.y === this.food.y;
     const eatsBonus = this.bonus && next.x === this.bonus.x && next.y === this.bonus.y;
     const grows = eatsFood || eatsBonus;
 
-    const hitsWall = next.x < 0 || next.y < 0 || next.x >= COLS || next.y >= this.rows;
-    // The tail moves away this tick unless we grow, so it's not an obstacle.
+    // The tail moves away this tick unless we grow, so it's not an obstacle. Only biting yourself ends the run.
     const body = grows ? this.snake : this.snake.slice(0, -1);
-    const hitsSelf = body.some((s) => s.x === next.x && s.y === next.y);
-    if (hitsWall || hitsSelf) return this.die();
+    if (body.some((s) => s.x === next.x && s.y === next.y)) return this.die();
 
     this.prev = this.snake.map((s) => ({ ...s }));
     this.snake.unshift(next);
@@ -172,10 +171,13 @@ class SnakeGame {
     ctx.fill();
     ctx.fillStyle = 'rgba(228,184,178,0.035)';
     for (let y = 0; y < this.rows; y++) for (let x = (y % 2); x < COLS; x += 2) ctx.fillRect(ox + x * cell, oy + y * cell, cell, cell);
+    // dashed edge: there are no walls, the snake passes through
     ctx.strokeStyle = 'rgba(228,184,178,0.25)';
     ctx.lineWidth = 1;
+    ctx.setLineDash([6, 6]);
     rr(ctx, ox - 4.5, oy - 4.5, cell * COLS + 9, cell * this.rows + 9, 12);
     ctx.stroke();
+    ctx.setLineDash([]);
 
     // food
     if (this.food) {
@@ -199,19 +201,29 @@ class SnakeGame {
       }
     }
 
-    // snake, interpolated between ticks for smooth motion
+    // snake, interpolated between ticks for smooth motion; clipped to the board so a segment that
+    // crosses an edge sinks into one side and comes out of the other
     const k = this.dead ? 1 : clamp(this.tick / this.interval, 0, 1);
+    const W = cell * COLS, H = cell * this.rows;
+    const unwrap = (d, size) => (d > 1 ? d - size : d < -1 ? d + size : d);  // shortest step across an edge
     const pts = this.snake.map((s, i) => {
       const p = this.prev[i] || s;
-      return this.center({ x: lerp(p.x, s.x, k), y: lerp(p.y, s.y, k) });
+      const dx = unwrap(s.x - p.x, COLS), dy = unwrap(s.y - p.y, this.rows);
+      return this.center({ x: s.x - dx * (1 - k), y: s.y - dy * (1 - k) });
     });
+    ctx.save();
+    ctx.beginPath(); ctx.rect(ox, oy, W, H); ctx.clip();
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     const n = pts.length;
     for (let i = n - 1; i > 0; i--) {
       const t = i / Math.max(1, n - 1);
       ctx.strokeStyle = `rgb(${Math.round(lerp(235, 122, t))},${Math.round(lerp(190, 43, t))},${Math.round(lerp(184, 67, t))})`;
       ctx.lineWidth = cell * lerp(0.78, 0.55, t);
-      ctx.beginPath(); ctx.moveTo(pts[i].x, pts[i].y); ctx.lineTo(pts[i - 1].x, pts[i - 1].y); ctx.stroke();
+      const a = pts[i], b = pts[i - 1];
+      const jx = Math.abs(b.x - a.x) > W / 2 ? Math.sign(a.x - b.x) * W : 0;  // the pair sits on opposite edges
+      const jy = Math.abs(b.y - a.y) > H / 2 ? Math.sign(a.y - b.y) * H : 0;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x + jx, b.y + jy); ctx.stroke();
+      if (jx || jy) { ctx.beginPath(); ctx.moveTo(a.x - jx, a.y - jy); ctx.lineTo(b.x, b.y); ctx.stroke(); }
     }
     const h = pts[0];
     ctx.fillStyle = this.dead && Math.floor(this.deadT * 10) % 2 ? COLORS.red : COLORS.accentHi;
@@ -226,6 +238,7 @@ class SnakeGame {
       ctx.fillStyle = '#111';
       ctx.beginPath(); ctx.arc(h.x + ex * 1.4 + px * s, h.y + ey * 1.4 + py * s, cell * 0.06, 0, TAU); ctx.fill();
     }
+    ctx.restore();
 
     this.fx.render(ctx);
     ctx.restore();

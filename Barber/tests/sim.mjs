@@ -256,5 +256,37 @@ for (const [id, mod] of BOTS.filter(([id]) => !id.includes('-'))) {
   }
 }
 
+console.log('\n— Пітон: no walls, edges wrap around');
+try {
+  const { api } = makeApi(360, 600);
+  const g = snake.create(api);
+  g.resize && g.resize(360, 600);
+  g.start && g.start();
+  const cols = 17, y = Math.floor(g.rows / 2);
+  const place = (cells, dir) => {
+    g.snake = cells; g.prev = cells.map((c) => ({ ...c })); g.dir = dir; g.queue = []; g.bonus = null;
+    g.food = { x: 8, y: (y + 4) % g.rows };
+  };
+  place([{ x: cols - 1, y }, { x: cols - 2, y }, { x: cols - 3, y }], { x: 1, y: 0 });
+  g.step();
+  const right = !g.dead && g.snake[0].x === 0 && g.snake[0].y === y;
+  g.tick = g.interval / 2; g.render(ctx);                       // half-way across the edge draws fine
+  place([{ x: 5, y: 0 }, { x: 5, y: 1 }, { x: 5, y: 2 }], { x: 0, y: -1 });
+  g.step();
+  const up = !g.dead && g.snake[0].x === 5 && g.snake[0].y === g.rows - 1;
+  place([{ x: 0, y }, { x: cols - 1, y }, { x: cols - 2, y }], { x: -1, y: 0 });
+  g.queue = [{ x: 0, y: 1 }]; g.step(); g.queue = [{ x: 1, y: 0 }]; g.step();
+  g.queue = [{ x: 0, y: -1 }]; g.step();                         // still alive: a long way from its tail
+  const selfStill = !g.dead;
+  place([{ x: 2, y }, { x: 1, y }, { x: 1, y: y + 1 }, { x: 2, y: y + 1 }, { x: 3, y: y + 1 }], { x: 0, y: 1 });
+  g.step();                                                      // turning into its own body still ends the run
+  report('python wraps right edge → left', right, 'head at x=0, alive');
+  report('python wraps top edge → bottom', up, 'head at y=rows-1, alive');
+  report('python wrap keeps it alive', selfStill, 'no wall death');
+  report('python still dies biting itself', g.dead, 'self-collision ends the run');
+} catch (e) {
+  report('python wrap', false, e.stack.split('\n').slice(0, 3).join(' | '));
+}
+
 console.log(failed ? `\n${failed} FAILED` : '\nAll simulations passed');
 process.exit(failed ? 1 : 0);
