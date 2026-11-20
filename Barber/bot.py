@@ -41,6 +41,7 @@ import booking
 import menu
 import reminders
 import comeback
+import free_windows
 import visit_calendar
 import reviews
 import team
@@ -285,7 +286,8 @@ def add_handlers(app: Application, persistent: bool = False) -> Application:
         app.add_handler(h)
     for h in admin.handlers():  # /admin panel, only for ADMIN_CHAT_IDS
         app.add_handler(h)
-    for h in reviews.handlers() + waitlist.handlers() + comeback.handlers() + visit_calendar.handlers():
+    for h in reviews.handlers() + waitlist.handlers() + comeback.handlers() + visit_calendar.handlers() \
+            + free_windows.handlers():
         app.add_handler(h)
     app.add_handler(CallbackQueryHandler(booking.stale_button, pattern=r"^bk:"))
     app.add_handler(CommandHandler("start", start))

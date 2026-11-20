@@ -75,6 +75,32 @@ def staff_text(items) -> Optional[str]:
         len(items), _visits(len(items)), ", ".join(_line(a) for a in items), FOOTER))
 
 
+async def no_phone_tomorrow(client, locations: Dict[int, str], now: datetime) -> List:
+    """Tomorrow's visits whose client has no phone in Altegio (e.g. only a name typed in): the bot
+    cannot remind them or show them in «Мій запис». Breaks and blocks (no services) are skipped."""
+    day = now.date() + timedelta(days=1)
+    lo = datetime(day.year, day.month, day.day, tzinfo=client.tz)
+    out: List = []
+    for loc in locations:
+        for a in await client.list_appointments(loc, lo, lo + timedelta(days=1)):
+            if a.active and a.services and not a.client_phone and a.start.date() == day:
+                out.append(a)
+    out.sort(key=lambda a: a.start)
+    return out
+
+
+def no_phone_text(items, names: Dict[int, str]) -> Optional[str]:
+    if not items:
+        return None
+    lines = ["📵 Завтра без телефону в записі: %d %s" % (len(items), _visits(len(items)))]
+    for a in items:
+        staff = a.staff_name or names.get(a.staff_id, "#%d" % a.staff_id)
+        lines.append("💈 %s — %s" % (staff, _line(a)))
+    lines += ["", "Додайте номер у картку клієнта в Altegio — інакше бот не надішле нагадування, "
+                  "а клієнт не побачить візит у «Мій запис»."]
+    return admin._clip("\n".join(lines))
+
+
 def _visits(n: int) -> str:
     if n % 10 == 1 and n % 100 != 11:
         return "візит"

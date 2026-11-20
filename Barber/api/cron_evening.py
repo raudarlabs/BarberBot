@@ -63,6 +63,17 @@ async def run_once(force=False) -> dict:
                     out["admins"] += 1
                 except TelegramError as e:
                     logger.warning("evening to admin %s failed: %s", chat_id, e)
+            try:  # tomorrow's visits without a phone: still time to add the number
+                missing = await unmarked.no_phone_tomorrow(client, locations, datetime.now(client.tz))
+                out["no_phone_tomorrow"] = len(missing)
+                note = unmarked.no_phone_text(missing, await unmarked._names(client, locations))
+                for chat_id in ids if note else []:
+                    try:
+                        await app.bot.send_message(chat_id=chat_id, text=note)
+                    except TelegramError as e:
+                        logger.warning("evening no-phone note to %s failed: %s", chat_id, e)
+            except Exception:
+                logger.exception("evening: no-phone check failed")
             for sid, m in staff.items():
                 own = unmarked.staff_text([a for a in todays if a.staff_id == sid])
                 if not own:

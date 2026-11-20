@@ -28,6 +28,29 @@ import _kv  # noqa: E402
 BOT_EVENTS = ("booked", "moved", "cancelled", "reminded")
 
 
+# Booking funnel: how far each booking dialog got (booking._step), counted once per dialog.
+FUNNEL = ("start", "barber", "service", "day", "time", "phone", "booked")
+
+
+def funnel_counts(ts=None) -> dict:
+    """{step: {"today", "week", "month", "all"}} from the stats:bot:funnel_<step> counters."""
+    days = _games.last_days(7, ts)
+    cmds, slots = [], []
+    for step in FUNNEL:
+        base = "stats:bot:funnel_%s" % step
+        for period, key in (("all", base), ("month", "%s:%s" % (base, _games.month_id(ts))),
+                            ("today", "%s:%s" % (base, _games.day_id(ts)))):
+            slots.append((step, period))
+            cmds.append(["GET", key])
+        for d in days:
+            slots.append((step, "week"))
+            cmds.append(["GET", "%s:%s" % (base, d)])
+    out = {s: {"today": 0, "week": 0, "month": 0, "all": 0} for s in FUNNEL}
+    for (step, period), v in zip(slots, _kv.pipeline(*cmds)):
+        out[step][period] += int(float(v)) if v is not None else 0
+    return out
+
+
 async def count_event(name: str, n: int = 1) -> None:
     """Best effort: +n to stats:bot:<name> for all time, this month and today."""
     if n <= 0:

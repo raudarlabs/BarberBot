@@ -28,8 +28,8 @@ class StaticTests(unittest.TestCase):
     def test_keyboard_layout(self):
         kb = menu.main_menu_keyboard()
         labels = [[b.text for b in row] for row in kb.keyboard]
-        self.assertEqual(labels, [[T.BOOK_BUTTON, T.MENU_REPEAT], [T.MENU_VISITS, T.MENU_STYLE],
-                                  [T.MENU_GAMES, T.MENU_PRICES], [T.MENU_CONTACTS]])
+        self.assertEqual(labels, [[T.BOOK_BUTTON, T.MENU_FREE], [T.MENU_REPEAT, T.MENU_VISITS],
+                                  [T.MENU_STYLE, T.MENU_GAMES], [T.MENU_PRICES, T.MENU_CONTACTS]])
         self.assertTrue(all(b.web_app is None for row in kb.keyboard for b in row))  # arcade only inline
         self.assertTrue(kb.is_persistent)
 
@@ -136,7 +136,9 @@ class MenuScreenTests(unittest.IsolatedAsyncioTestCase):
         await self.links.link(USER, "380671234567")
         await menu.dispatch(self.text_update(T.MENU_VISITS), self.ctx)
         text, markup = self.chat.sent[-1]
-        self.assertEqual((text, buttons(markup)), (T.VISITS_NONE, [(T.VISITS_BOOK, "bk:new")]))
+        self.assertEqual((text, buttons(markup)), (T.VISITS_NONE_HINT.format(phone=SHOP["phone"]),
+                                                   [(T.VISITS_BOOK, "bk:new")]))
+        self.assertIn("+380980337733", text)  # no spaces: Telegram makes it tappable to call
 
     async def test_foreign_contact_rejected(self):
         msg = FakeMessage(self.chat, contact=Contact("+380500000000", "X", user_id=1))

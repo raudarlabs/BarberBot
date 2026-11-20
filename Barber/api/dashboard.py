@@ -102,7 +102,9 @@ def _sources() -> dict:
 
 def _bot() -> dict:
     import admin  # the bot's counters
-    return {"events": admin._event_counts(), "chats": admin._chat_counts(), "sources": _sources()}
+    import admin_notify  # booking funnel counters
+    return {"events": admin._event_counts(), "chats": admin._chat_counts(), "sources": _sources(),
+            "funnel": admin_notify.funnel_counts()}
 
 
 def handle(req):
@@ -114,7 +116,7 @@ def handle(req):
     staff = who.get("staff")
     if admin and str(req.query.get("staff", "")).isdigit():
         staff = int(req.query["staff"])
-    key = "bb:dash2:%s:%s:%s" % (p, staff or "all", "a" if admin else "s")
+    key = "bb:dash3:%s:%s:%s" % (p, staff or "all", "a" if admin else "s")
     data = None
     if req.query.get("fresh") != "1":
         cached = _kv.cmd("GET", key)

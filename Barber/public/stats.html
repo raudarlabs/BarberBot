@@ -351,6 +351,17 @@
       html += `<div class="card"><h2>Бот <span>${c.total} клієнтів · активні сьогодні ${c.day} · за 7 днів ${c.week}</span></h2>
         <table><tr><th></th><th>Сьогодні</th><th>7 днів</th><th>Місяць</th><th>Всього</th></tr>${Object.keys(names).map((k) =>
         `<tr><td>${names[k]}</td><td>${e[k].today}</td><td>${e[k].week}</td><td>${e[k].month}</td><td>${e[k].all}</td></tr>`).join('')}</table></div>`;
+      const f = d.bot.funnel;
+      if (f) {
+        const FN = { start: 'Почали запис', barber: 'Обрали майстра', service: 'Обрали послугу', day: 'Обрали день',
+          time: 'Обрали час', phone: 'Підтвердили номер', booked: 'Записались' };
+        const pct = (v, base) => base ? Math.round(v / base * 100) + '%' : '—';
+        const m0 = (f.start || {}).month || 0, w0 = (f.start || {}).week || 0;
+        html += `<div class="card"><h2>Воронка запису <span>скільки діалогів дійшли до кроку (переноси не рахуються)</span></h2>
+          <table><tr><th></th><th>7 днів</th><th></th><th>Місяць</th><th></th></tr>${Object.keys(FN).map((k) => {
+            const w = (f[k] || {}).week || 0, m = (f[k] || {}).month || 0;
+            return `<tr><td>${FN[k]}</td><td>${w}</td><td>${pct(w, w0)}</td><td>${m}</td><td>${pct(m, m0)}</td></tr>`; }).join('')}</table></div>`;
+      }
       const src = d.bot.sources;
       if (src) {
         const SRCN = { site: 'Кнопка на сайті', qr_desk: 'QR на рецепції', qr_mirror: 'QR на дзеркалі', instagram: 'Instagram', other: 'Інше посилання' };

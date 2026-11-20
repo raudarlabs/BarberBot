@@ -140,9 +140,10 @@ LEGACY_STYLE_UK = "Підібрати зачіску"  # the April 2026 live bot
 LEGACY_GAMES_UK = "Ігровуха"
 MENU_UPDATED = "Меню оновлено 👇"
 MENU_PLACEHOLDER = "Оберіть дію або надішліть голосове 🎙"
+MENU_FREE = "⚡ Вільно сьогодні"
 # Menu buttons other than "📅 Записатися" (that one starts the booking itself).
 MENU_REGEX = "^(%s)$" % "|".join(re.escape(x) for x in (
-    MENU_VISITS, MENU_STYLE, MENU_GAMES, MENU_PRICES, MENU_CONTACTS, LEGACY_STYLE, LEGACY_GAMES,
+    MENU_VISITS, MENU_STYLE, MENU_GAMES, MENU_PRICES, MENU_CONTACTS, MENU_FREE, LEGACY_STYLE, LEGACY_GAMES,
     LEGACY_STYLE_UK, LEGACY_GAMES_UK))
 
 WELCOME = (
@@ -189,6 +190,12 @@ CONTACTS_INSTAGRAM = "📸 Instagram"
 
 VISITS_ASK_PHONE = "Щоб знайти ваші записи, поділіться номером телефону кнопкою нижче 👇"
 VISITS_NONE = "Найближчих записів не знайшли. Записатися?"
+VISITS_NONE_HINT = (
+    "Найближчих записів не знайшли.\n\n"
+    "Якщо ви записувались телефоном або в салоні, у записі міг не зберегтися ваш номер — тоді бот "
+    "його не бачить. Уточніть у адміністратора: 📞 {phone}\n\n"
+    "Або запишіться тут 👇"
+)
 VISITS_HEADER = "Ваші найближчі візити:"
 VISIT = "💈 {staff}{service}\n🕐 {when}\n📍 {location}"
 VISITS_BOOK = "📅 Записатися"
@@ -232,3 +239,16 @@ REPEAT_PICKED = "Як минулого разу: {staff} · {service} 🔁"
 ICS_BUTTON = "📅 Додати в календар"
 ICS_CAPTION = "Візит {when}. Відкрийте файл — телефон додасть його в календар із нагадуванням за 2 години."
 ICS_GOOGLE = "Google Календар"
+
+
+# ------------------------------------------------------------------ "⚡ Вільно сьогодні" (free_windows.py)
+FREE_TODAY = "⚡ Вільно сьогодні — «{service}»:"
+FREE_TOMORROW = "⚡ Сьогодні вже все зайнято. Вільно завтра — «{service}»:"
+FREE_MORNING = "☀️ Доброго ранку! Вільно сьогодні — «{service}»:"
+FREE_HINT = "Натисніть час — залишиться тільки підтвердити 👇"
+FREE_NONE = "Сьогодні й завтра вільних вікон на «{service}» вже немає. Оберіть інший день у «📅 Записатися»."
+FREE_OTHER = "📅 Інша послуга або день"
+FREE_SUB = "🔔 Надсилати вільні вікна щоранку"
+FREE_UNSUB = "🔕 Не надсилати вранці"
+FREE_SUB_DONE = "Готово! Щоранку о 10:00 надсилатимемо вільні вікна на сьогодні (якщо вони є) 🔔"
+FREE_UNSUB_DONE = "Добре, вранці більше не надсилатимемо."

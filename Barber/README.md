@@ -159,6 +159,27 @@ If the barber left, the invitation offers any barber.
 A menu button: the client's latest visit (remembered from bookings and the daily pass, else found
 in the last 3 months of Altegio by phone) → same barber and service → calendar.
 
+### ⚡ Вільно сьогодні (free_windows.py)
+A menu button: for every barber their «Чоловіча стрижка» (`FREE_WINDOWS_SERVICE`), the next 3 free
+times from Altegio's online booking, at least 30 minutes ahead, sorted by time («15:00 · Віктор»).
+From 19:00, or when today is full, tomorrow is shown. A tap re-checks the slot and goes straight to
+phone / confirmation; if it was taken meanwhile, that barber's other times are shown.
+**🔔 Надсилати вільні вікна щоранку** subscribes the chat: at 10:00 Kyiv (inside the 10-minute
+cron) subscribers get today's free windows, only when there are any. A chat that blocked the bot
+is unsubscribed.
+
+### Booking funnel (dashboard → «Бот»)
+Every booking dialog records how far it got: started → barber → service → day → time → phone →
+booked, once per step per dialog (shortcuts count the steps they skip; moving a visit is not
+counted). Counters `stats:bot:funnel_<step>` (today / 7 days / month / all); the dashboard shows
+the «Воронка запису» card with % of started dialogs.
+
+### No phone = invisible to the bot
+A visit typed into Altegio with only a name has no phone, so the bot cannot remind the client or
+show it in «Мій запис». «Мій запис» now says so when it finds nothing (with the shop phone, which
+Telegram makes tappable), and the 21:00 admin report adds **📵 Завтра без телефону в записі**: tomorrow's
+visits (with services) whose client has no phone, so the admin can add the number in time.
+
 ### 📅 Додати в календар (visit_calendar.py)
 After a booking or a move the summary gets **📅 Додати в календар**, and so does every visit in
 «Мій запис». It sends a `.ics` file (iPhone / Android open it in the phone's calendar, with a 2-hour

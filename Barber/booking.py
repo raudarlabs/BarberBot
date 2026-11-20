@@ -124,7 +124,21 @@ def _hint(context) -> str:
     return ""
 
 
+async def _step(context, step: str) -> None:
+    """Booking funnel: mark that this dialog reached `step` (and every step before it). Each step
+    is counted once per dialog; moving a visit is not a booking and is not counted."""
+    bk = context.user_data.get("bk")
+    if bk is None or bk.get("reschedule"):
+        return
+    done = bk.setdefault("fn", [])
+    for s in admin_notify.FUNNEL[:admin_notify.FUNNEL.index(step) + 1]:
+        if s not in done:
+            done.append(s)
+            await admin_notify.count_event("funnel_" + s)
+
+
 async def show_locations(update, context):
+    await _step(context, "start")
     client, _, locations = _deps(context)
     if len(locations) == 1:
         _bk(context)["loc"] = next(iter(locations))
@@ -136,6 +150,7 @@ async def show_locations(update, context):
 
 
 async def show_staff(update, context, back="loc"):
+    await _step(context, "start")
     client, _, locations = _deps(context)
     bk = _bk(context)
     back = back if len(locations) > 1 else None
@@ -254,6 +269,7 @@ async def _edit(update, text, markup):
 
 
 async def show_services(update, context):
+    await _step(context, "barber")
     client, _, _ = _deps(context)
     bk = _bk(context)
     try:
@@ -323,6 +339,7 @@ def calendar_markup(month: date, days, today: date, last: date, back) -> InlineK
 async def show_days(update, context, month: date = None, keep: bool = False):
     """The calendar. Opens on this month, or the first month with free days; `keep` reopens the
     month the client was looking at (coming back from the times)."""
+    await _step(context, "service")
     client, _, _ = _deps(context)
     bk = _bk(context)
     today = datetime.now(client.tz).date()
@@ -366,6 +383,7 @@ async def on_nop(update, context):
 
 
 async def show_times(update, context, prefix=None, window=None, starts=None):
+    await _step(context, "day")
     """Free start times for bk["day"]; `window` = ("HH:MM" or None, "HH:MM" or None) narrows them."""
     client, _, _ = _deps(context)
     bk = _bk(context)
@@ -422,6 +440,7 @@ def _start_dt(context) -> datetime:
 
 
 async def show_summary(update, context):
+    await _step(context, "phone")
     client, _, locations = _deps(context)
     bk = _bk(context)
     start = _start_dt(context)
@@ -743,6 +762,47 @@ async def on_waitlist(update, context):
     return await _finish(update, context, None)
 
 
+async def start_free_window(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """bk:fw:{loc}:{staff}:{service}:{YYYYmmddHHMM} from "⚡ Вільно сьогодні": that exact time, if it
+    is still free -> phone / confirmation; taken meanwhile -> that barber's other times that day."""
+    client, _, locations = _deps(context)
+    q = update.callback_query
+    try:
+        _, _, loc, staff_id, svc_id, stamp = q.data.split(":")
+        loc, staff_id, svc_id = int(loc), int(staff_id), int(svc_id)
+        start = datetime(int(stamp[:4]), int(stamp[4:6]), int(stamp[6:8]), int(stamp[8:10]), int(stamp[10:12]),
+                         tzinfo=client.tz if client else None)
+    except (ValueError, IndexError):
+        await q.answer()
+        return None
+    if client is None or loc not in locations:
+        await q.answer(T.UNAVAILABLE, show_alert=True)
+        return None
+    if start <= datetime.now(client.tz):
+        await q.answer(T.SESSION_EXPIRED, show_alert=True)
+        return None
+    try:
+        names = {s.id: s.name for s in await client.list_staff(loc)}
+        services = await client.list_services(loc, staff_id) if staff_id in names else []
+        svc = next((s for s in services if s.id == svc_id), None)
+        free = await client.booking_times(loc, staff_id, start.date(), [svc_id]) if svc else []
+    except AltegioError as e:
+        return await _api_failed(update, context, e)
+    if svc is None:
+        await q.answer(T.SESSION_EXPIRED, show_alert=True)
+        return None
+    await q.answer()
+    bk = context.user_data["bk"] = {
+        "loc": loc, "staff_id": staff_id, "staff_name": names[staff_id], "staff_names": names,
+        "services": {s.id: s for s in services}, "service_id": svc.id, "duration": svc.duration,
+        "day": start.date().isoformat()}
+    here = _NoCallback(update)  # keep the free-windows list, answer under it
+    if start not in free:
+        return await show_times(here, context, prefix=T.SLOT_TAKEN)
+    bk["time"] = start.strftime("%H%M")
+    return await _after_time(here, context)
+
+
 async def start_on_day(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """bk:wd:{loc}:{staff}:{service}:{YYYYMMDD} from a waitlist message: straight to that day's times."""
     client, _, locations = _deps(context)
@@ -786,6 +846,7 @@ async def on_time(update, context):
 
 
 async def _after_time(update, context):
+    await _step(context, "time")
     _, links, _ = _deps(context)
     bk = _bk(context)
     if bk.get("reschedule"):
@@ -876,6 +937,7 @@ async def on_confirm(update, context):
     except Exception:
         pass
     await admin_notify.count_event("moved" if bk.get("reschedule") else "booked")
+    await _step(context, "booked")
     try:  # the barber, if he is linked to the bot (team.py)
         if bk.get("reschedule"):
             old = bk["appt"]
@@ -1164,6 +1226,7 @@ def build_handler(persistent: bool = False) -> ConversationHandler:
             CallbackQueryHandler(start_repeat_last, pattern=r"^bk:last$"),
             MessageHandler(filters.Regex("^%s$" % T.MENU_REPEAT), start_repeat_last),
             CallbackQueryHandler(start_on_day, pattern=r"^bk:wd:\d+:\d+:\d+:\d{8}$"),
+            CallbackQueryHandler(start_free_window, pattern=r"^bk:fw:\d+:\d+:\d+:\d{12}$"),
             voice,
         ],
         states={

@@ -24,6 +24,7 @@ from telegram.ext import Application  # noqa: E402
 
 import bot  # noqa: E402
 import comeback  # noqa: E402
+import free_windows  # noqa: E402
 import reminders  # noqa: E402
 import reviews  # noqa: E402
 import team  # noqa: E402
@@ -65,6 +66,11 @@ async def run_once() -> dict:
             except Exception:
                 logger.exception("comeback failed")
                 out["comeback_invited"] = "error"
+            try:  # 10:00 Kyiv, once a day: today's free windows to subscribers
+                out["free_windows_sent"] = await free_windows.run_morning(client, app.bot_data["links"], locations, app.bot)
+            except Exception:
+                logger.exception("free windows morning failed")
+                out["free_windows_sent"] = "error"
             try:
                 out["waitlist_told"] = await waitlist.run(client, app.bot_data["links"], app.bot)
             except Exception:

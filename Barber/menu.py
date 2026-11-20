@@ -32,6 +32,7 @@ from telegram.ext import CallbackQueryHandler, ContextTypes, MessageHandler, fil
 
 import texts as T
 from altegio import AltegioError, normalize_phone
+import free_windows
 import visit_calendar
 from reminders import move_confirm_buttons
 
@@ -52,10 +53,10 @@ MAX_VISITS = 5
 def main_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(T.BOOK_BUTTON), KeyboardButton(T.MENU_REPEAT)],
-            [KeyboardButton(T.MENU_VISITS), KeyboardButton(T.MENU_STYLE)],
-            [KeyboardButton(T.MENU_GAMES), KeyboardButton(T.MENU_PRICES)],
-            [KeyboardButton(T.MENU_CONTACTS)],
+            [KeyboardButton(T.BOOK_BUTTON), KeyboardButton(T.MENU_FREE)],
+            [KeyboardButton(T.MENU_REPEAT), KeyboardButton(T.MENU_VISITS)],
+            [KeyboardButton(T.MENU_STYLE), KeyboardButton(T.MENU_GAMES)],
+            [KeyboardButton(T.MENU_PRICES), KeyboardButton(T.MENU_CONTACTS)],
         ],
         resize_keyboard=True,
         is_persistent=True,
@@ -247,7 +248,8 @@ async def show_visits(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             visits.append((a, address))
 
     if not visits:
-        await _reply(update, T.VISITS_NONE,
+        shop_phone = (bd.get("shop") or {}).get("phone", "")  # "+380…" without spaces: tappable in Telegram
+        await _reply(update, T.VISITS_NONE_HINT.format(phone=shop_phone) if shop_phone else T.VISITS_NONE,
                      InlineKeyboardMarkup([[InlineKeyboardButton(T.VISITS_BOOK, callback_data="bk:new")]]))
         return
     visits.sort(key=lambda v: v[0].start)
@@ -290,6 +292,7 @@ ROUTES = {
     T.LEGACY_GAMES_UK: show_games,
     T.MENU_PRICES: show_prices,
     T.MENU_CONTACTS: show_contacts,
+    T.MENU_FREE: free_windows.show,
 }
 
 
