@@ -1,0 +1,218 @@
+{
+ "_note": "Recorded read-only from the live Altegio account (location 297851, Nov 2026): barbers, service categories, titles and prices. No client data. Durations were not exposed by the read, 3600 s matches the session length Altegio reported for 'Чоловіча стрижка'; the rest are placeholders. The working-day template and busy blocks are synthetic.",
+ "timezone": "Europe/Kyiv",
+ "schedule": {
+  "open": "10:00",
+  "close": "20:00",
+  "step_minutes": 5,
+  "days_off": [
+   6
+  ]
+ },
+ "busy": [
+  {
+   "staff_id": 875690,
+   "weekdays": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "from": "13:00",
+   "to": "14:00"
+  },
+  {
+   "staff_id": 2106676,
+   "weekdays": [
+    0,
+    2,
+    4
+   ],
+   "from": "10:00",
+   "to": "12:00"
+  }
+ ],
+ "locations": {
+  "297851": {
+   "team_members": [
+    {
+     "type": "staff",
+     "id": "875690",
+     "attributes": {
+      "name": "Ігор Халай",
+      "specialization": "Барбер",
+      "hidden": 0,
+      "fired": 0
+     }
+    },
+    {
+     "type": "staff",
+     "id": "2106676",
+     "attributes": {
+      "name": "Віктор Дяченко",
+      "specialization": "Барбер",
+      "hidden": 0,
+      "fired": 0
+     }
+    },
+    {
+     "type": "staff",
+     "id": "875756",
+     "attributes": {
+      "name": "Владимир Герман",
+      "specialization": "Барбер",
+      "hidden": 1,
+      "fired": 1
+     }
+    },
+    {
+     "type": "staff",
+     "id": "2946993",
+     "attributes": {
+      "name": "Давид",
+      "specialization": "Власник",
+      "hidden": 1,
+      "fired": 0
+     }
+    }
+   ],
+   "services_by_staff": {
+    "875690": [
+     {
+      "type": "service",
+      "id": "10808322",
+      "attributes": {
+       "title": "Чоловіча стрижка",
+       "category_id": 10808303,
+       "price_min": 800,
+       "price_max": 800,
+       "duration": 3600
+      }
+     },
+     {
+      "type": "service",
+      "id": "10808317",
+      "attributes": {
+       "title": "Стрижка машинкою",
+       "category_id": 10808303,
+       "price_min": 650,
+       "price_max": 650,
+       "duration": 1800
+      }
+     },
+     {
+      "type": "service",
+      "id": "10808315",
+      "attributes": {
+       "title": "Стрижка бороди",
+       "category_id": 10808303,
+       "price_min": 700,
+       "price_max": 700,
+       "duration": 1800
+      }
+     },
+     {
+      "type": "service",
+      "id": "10808313",
+      "attributes": {
+       "title": "Комплекс",
+       "category_id": 10808303,
+       "price_min": 1150,
+       "price_max": 1150,
+       "duration": 5400
+      }
+     },
+     {
+      "type": "service",
+      "id": "10808304",
+      "attributes": {
+       "title": "Камуфлювання",
+       "category_id": 10808303,
+       "price_min": 300,
+       "price_max": 500,
+       "duration": 1800
+      }
+     }
+    ],
+    "2106676": [
+     {
+      "type": "service",
+      "id": "10808299",
+      "attributes": {
+       "title": "Чоловіча стрижка",
+       "category_id": 10808256,
+       "price_min": 800,
+       "price_max": 800,
+       "duration": 3600
+      }
+     },
+     {
+      "type": "service",
+      "id": "10808287",
+      "attributes": {
+       "title": "Стрижка машинкою",
+       "category_id": 10808256,
+       "price_min": 650,
+       "price_max": 650,
+       "duration": 1800
+      }
+     },
+     {
+      "type": "service",
+      "id": "10808285",
+      "attributes": {
+       "title": "Стрижка бороди",
+       "category_id": 10808256,
+       "price_min": 700,
+       "price_max": 700,
+       "duration": 1800
+      }
+     },
+     {
+      "type": "service",
+      "id": "10808259",
+      "attributes": {
+       "title": "Камуфлювання",
+       "category_id": 10808256,
+       "price_min": 200,
+       "price_max": 400,
+       "duration": 1800
+      }
+     }
+    ]
+   }
+  },
+  "708761": {
+   "_note": "synthetic: one real barber id, made-up service so the location picker has a second option",
+   "team_members": [
+    {
+     "type": "staff",
+     "id": "2051616",
+     "attributes": {
+      "name": "Ігор Халай",
+      "specialization": "Барбер",
+      "hidden": 0,
+      "fired": 0
+     }
+    }
+   ],
+   "services_by_staff": {
+    "2051616": [
+     {
+      "type": "service",
+      "id": "20000001",
+      "attributes": {
+       "title": "Чоловіча стрижка",
+       "category_id": 1,
+       "price_min": 800,
+       "price_max": 800,
+       "duration": 3600
+      }
+     }
+    ]
+   }
+  }
+ }
+}

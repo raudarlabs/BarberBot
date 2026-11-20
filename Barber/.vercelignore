@@ -1,0 +1,10 @@
+# Vercel runs public/ (games), api/ (arcade API, bot webhook, cron) and the bot modules they import.
+# Local-only things stay out:
+dev_server.py
+requirements.txt
+fixtures/
+altegio_fixture.py
+tests/
+scripts/
+README.md
+.env*

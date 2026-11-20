@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#120d0f">
+<title>True Games</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&display=swap">
+<link rel="stylesheet" href="/arcade/styles.css">
+</head>
+<body>
+
+<main id="app">
+  <!-- ============ HUB ============ -->
+  <section id="hub" class="screen">
+    <div class="brand"><span class="brand-main">CUSTOM</span><span class="brand-sub">BARBERSHOP</span></div>
+    <header class="hub-head">
+      <h1>BARBER GAMES</h1>
+      <p class="sub" data-i18n="tagline"></p>
+    </header>
+    <div id="launchHint" class="launch-hint hidden">
+      <div class="launch-hint-text" data-i18n="launchHint"></div>
+      <button id="launchHintBtn" class="btn btn-gold" type="button" data-i18n="launchHintBtn"></button>
+    </div>
+    <div id="wins" class="wins"></div>
+    <button id="prizeBanner" class="prize" type="button"></button>
+    <div id="cards" class="cards"></div>
+    <button id="ideaBtn" class="idea-cta" type="button">
+      <span class="tile idea-tile">💡</span>
+      <span class="card-body">
+        <span class="card-title" data-i18n="ideaCta"></span>
+        <span class="card-desc" data-i18n="ideaCtaDesc"></span>
+      </span>
+      <span class="chev">›</span>
+    </button>
+    <p class="note" data-i18n="resetsMonthly"></p>
+    <button id="bookBtn" class="btn btn-gold book" data-i18n="book"></button>
+    <div class="hub-tools">
+      <button id="langBtn" class="chip" type="button"></button>
+      <button id="soundBtn" class="chip" type="button"></button>
+    </div>
+  </section>
+
+  <!-- ============ PLAY ============ -->
+  <section id="play" class="screen hidden">
+    <div class="hud">
+      <button class="icon-btn" id="hudBack" type="button" aria-label="Back">‹</button>
+      <div class="hud-mid">
+        <div class="hud-title" id="hudTitle"></div>
+        <div class="hud-score" id="hudScore">0</div>
+      </div>
+      <div class="hud-right">
+        <div id="hudLives" class="lives"></div>
+        <button class="icon-btn" id="hudPause" type="button" aria-label="Pause">❚❚</button>
+      </div>
+    </div>
+
+    <div class="stage" id="stageWrap">
+      <canvas id="canvas"></canvas>
+
+      <div class="overlay" id="ovStart">
+        <div class="ov-box">
+          <div class="ov-icon" id="startIcon"></div>
+          <h2 id="startTitle"></h2>
+          <p class="how" id="startHow"></p>
+          <div class="best-line" id="startBest"></div>
+          <button class="btn btn-gold" id="startBtn" type="button" data-i18n="tapToStart"></button>
+        </div>
+      </div>
+
+      <div class="overlay hidden" id="ovPause">
+        <div class="ov-box">
+          <h2 data-i18n="paused"></h2>
+          <button class="btn btn-gold" id="resumeBtn" type="button" data-i18n="resume"></button>
+          <button class="btn btn-ghost" id="quitBtn" type="button" data-i18n="toHub"></button>
+        </div>
+      </div>
+
+      <div class="overlay hidden" id="ovOver">
+        <div class="ov-box over-box">
+          <h2 data-i18n="gameOver"></h2>
+          <div class="final" id="overScore">0</div>
+          <div class="badge hidden" id="overBadge" data-i18n="newBest"></div>
+          <div class="status" id="overStatus"></div>
+          <ol class="mini-board" id="overBoard"></ol>
+          <button class="btn btn-gold" id="againBtn" type="button" data-i18n="playAgain"></button>
+          <div class="row">
+            <button class="btn btn-ghost" id="shareBtn" type="button" data-i18n="share"></button>
+            <button class="btn btn-ghost" id="boardBtn" type="button" data-i18n="leaderboard"></button>
+          </div>
+          <button class="link-btn" id="overBook" type="button" data-i18n="bookShort"></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls" id="controls"></div>
+  </section>
+
+  <!-- ============ GAME IDEA ============ -->
+  <section id="idea" class="screen hidden">
+    <div class="board-head">
+      <button class="icon-btn" id="ideaBack" type="button" aria-label="Back">‹</button>
+      <h2 data-i18n="ideaTitle"></h2>
+      <span class="spacer"></span>
+    </div>
+    <form id="ideaForm" class="idea-form" novalidate>
+      <p class="idea-lead" data-i18n="ideaLead"></p>
+      <label for="ideaName" data-i18n="ideaNameLabel"></label>
+      <input id="ideaName" maxlength="80" autocomplete="off">
+      <label for="ideaText" data-i18n="ideaTextLabel"></label>
+      <textarea id="ideaText" rows="6" maxlength="1500"></textarea>
+      <div class="idea-count" id="ideaCount">0 / 1500</div>
+      <div class="status" id="ideaStatus"></div>
+      <button class="btn btn-gold" id="ideaSend" type="submit" data-i18n="ideaSend"></button>
+    </form>
+    <div class="idea-done hidden" id="ideaDone">
+      <div class="idea-done-icon">💈</div>
+      <h2 data-i18n="ideaThanks"></h2>
+      <p data-i18n="ideaThanksText"></p>
+      <button class="btn btn-ghost" id="ideaDoneBtn" type="button" data-i18n="toHub"></button>
+    </div>
+  </section>
+
+  <!-- ============ LEADERBOARD ============ -->
+  <section id="board" class="screen hidden">
+    <div class="board-head">
+      <button class="icon-btn" id="boardBack" type="button" aria-label="Back">‹</button>
+      <h2 id="boardTitle"></h2>
+      <span class="spacer"></span>
+    </div>
+    <div class="game-switch" id="gameSwitch"></div>
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-period="month" type="button" data-i18n="month"></button>
+      <button class="tab" data-period="all" type="button" data-i18n="allTime"></button>
+      <button class="tab" data-period="history" type="button" data-i18n="history"></button>
+    </div>
+    <div class="chips hidden" id="monthChips"></div>
+    <ol class="board-list" id="boardList"></ol>
+    <p class="note" id="boardNote"></p>
+  </section>
+</main>
+
+<div class="toast hidden" id="toast"></div>
+<script type="module" src="/arcade/app.js"></script>
+</body>
+</html>

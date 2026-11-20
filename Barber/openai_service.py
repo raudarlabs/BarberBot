@@ -12,11 +12,21 @@ from config import (
     NUM_HAIRSTYLES,
 )
 
-# xAI client for vision analysis
-client = AsyncOpenAI(api_key=XAI_API_KEY, base_url=XAI_BASE_URL)
+_clients = {}
 
-# OpenAI client for image generation
-openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+
+def _xai():
+    """xAI client for vision analysis (created on first use, so a missing key only breaks this feature)."""
+    if "xai" not in _clients:
+        _clients["xai"] = AsyncOpenAI(api_key=XAI_API_KEY, base_url=XAI_BASE_URL)
+    return _clients["xai"]
+
+
+def _openai():
+    """OpenAI client for image generation."""
+    if "openai" not in _clients:
+        _clients["openai"] = AsyncOpenAI(api_key=OPENAI_API_KEY)
+    return _clients["openai"]
 
 SYSTEM_PROMPT = (
     "You are an expert barber and hairstylist assistant. "
@@ -37,7 +47,7 @@ Then suggest 6 distinct haircut options that would work well for this hair type.
 
 For each option provide:
 - name: haircut name
-- reason: one sentence why it suits this hair type
+- reason: one sentence in Ukrainian language why it suits this hair type
 - image_prompt: a detailed DALL-E style prompt to generate a photorealistic image of a man with this exact haircut. Describe the haircut in detail (length on top, sides, back, texture, styling). Start each prompt with "Photorealistic portrait photo of a man with"
 
 Respond with ONLY a valid JSON object, no markdown, no explanation:
@@ -62,7 +72,7 @@ async def analyze_photo_and_get_hairstyles(photo_bytes: bytes) -> dict:
     """
     base64_image = base64.b64encode(photo_bytes).decode("utf-8")
 
-    response = await client.chat.completions.create(
+    response = await _xai().chat.completions.create(
         model=VISION_MODEL,
         messages=[
             {
@@ -130,7 +140,7 @@ async def generate_hairstyle_image(prompt: str, original_photo: bytes) -> bytes:
     Edits the user's actual photo to apply the hairstyle, preserving likeness.
     Returns image bytes.
     """
-    response = await openai_client.images.edit(
+    response = await _openai().images.edit(
         model=IMAGE_MODEL,
         image=("photo.jpg", original_photo, "image/jpeg"),
         prompt=prompt,
